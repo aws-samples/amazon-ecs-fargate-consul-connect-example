@@ -1,0 +1,194 @@
+# For testing/development purposes only!
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Deploy an ECS service with a Consul Connect sidecar
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: test
+    Description: The name of the environment to add this service to
+  ServiceName:
+    Type: String
+    Default: greeter
+    Description: A name for the service
+  ImageUrl:
+    Type: String
+    #Default: nathanpeck/greeter
+    Description: The url of a docker image that contains the application process that
+                 will handle the traffic for this service
+  InitImageUrl:
+    Type: String
+    Description: The custom build image which will create the config files
+  
+  ContainerPort:
+    Type: Number
+    Default: 3000
+    Description: What port number the application inside the docker container is binding to
+  ContainerCpu:
+    Type: Number
+    Default: 256
+    Description: How much CPU to give the container. 1024 is 1 CPU
+  ContainerMemory:
+    Type: Number
+    Default: 512
+    Description: How much memory in megabytes to give the container
+  DesiredCount:
+    Type: Number
+    Default: 2
+    Description: How many copies of the service task to run
+
+Resources:
+  # A log group for storing the stdout logs from this service's containers
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub ${EnvironmentName}-service-${ServiceName}
+
+  # Consul agent role. This role authorizes the Consul daemon to query the list of EC2 instances
+  # by tag in order to locate the Consul server.
+  ConsulAgentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: "ecs-tasks.amazonaws.com"
+          Action: ['sts:AssumeRole']
+      Path: /
+      Policies:
+      - PolicyName: query-ec2-instances
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action:
+              - 'ec2:DescribeInstances'
+            Resource: '*'
+
+  # Task execution role. This role authorizes the ECS agent to pull images from ECR 
+  # and post to CloudWatch logs.
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: "ecs-tasks.amazonaws.com"
+          Action: ['sts:AssumeRole']
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  # The task definition. This is a simple metadata description of what
+  # container to run, and what resource requirements it has.
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Ref 'ServiceName'
+      Cpu: !Ref 'ContainerCpu'
+      Memory: !Ref 'ContainerMemory'
+      NetworkMode: awsvpc
+      Cpu: 512
+      Memory: 1024
+      ExecutionRoleArn: !GetAtt 'TaskExecutionRole.Arn'
+      TaskRoleArn: !GetAtt 'ConsulAgentRole.Arn'
+      RequiresCompatibilities:
+        - FARGATE
+      Volumes:
+          - Name: consul-data
+          - Name: consul-config
+      ContainerDefinitions:
+
+        # The actual service container. Should only accept inbound traffic from Consul 
+        # Connect and to other services via a localhost Consul proxy pipe
+        - Name: !Ref 'ServiceName'
+          Cpu: !Ref 'ContainerCpu'
+          Memory: !Ref 'ContainerMemory'
+          Image: !Ref 'ImageUrl'
+          Environment:
+            - Name: PORT
+              Value: !Ref 'ContainerPort'
+            # The Consul Connect proxy has two upstreams which allow the process to
+            # send a request to these two remote processes by using these local ports
+            - Name: NAME_URL
+              Value: http://localhost:3001
+            - Name: GREETING_URL
+              Value: http://localhost:3002
+          Essential: true
+          LogConfiguration:
+            LogDriver: 'awslogs'
+            Options:
+              awslogs-group: !Sub ${EnvironmentName}-service-${ServiceName}
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: !Ref 'ServiceName'
+
+        # the agent which should join the mesh & register the service
+        - Name: !Sub ${ServiceName}-agent
+          Image: !Ref 'InitImageUrl'
+          PortMappings:
+            - ContainerPort: 8301
+              Protocol: tcp
+            - ContainerPort: 8301
+              Protocol: udp
+            - ContainerPort: 8400
+              Protocol: tcp
+            - ContainerPort: 8500
+              Protocol: tcp
+            - ContainerPort: 53
+              Protocol: udp
+          MountPoints:
+              - ContainerPath: /consul/data
+                SourceVolume: consul-data
+                ReadOnly: false
+              - ContainerPath: /consul/config
+                SourceVolume: consul-config
+                ReadOnly: false
+          LogConfiguration:
+            LogDriver: 'awslogs'
+            Options:
+              awslogs-group: !Sub ${EnvironmentName}-service-${ServiceName}
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: !Sub ${ServiceName}-agent
+        
+        # the Consul Connect sidecar proxy
+        - Name: !Sub ${ServiceName}-proxy
+          Image: 'public.ecr.aws/hashicorp/consul:1.9.1'
+          DependsOn:
+            - ContainerName: !Sub ${ServiceName}-agent
+              Condition: START
+          EntryPoint:
+            - '/bin/sh'
+            - '-c'
+          Command:
+            - !Sub >
+              exec consul connect proxy -sidecar-for ${ServiceName}
+          PortMappings:
+            - ContainerPort: 8080
+          LogConfiguration:
+            LogDriver: 'awslogs'
+            Options:
+              awslogs-group: !Sub ${EnvironmentName}-service-${ServiceName}
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: !Sub ${ServiceName}-proxy
+
+  # The ECS service to run the containers
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Ref 'ServiceName'
+      LaunchType: 'FARGATE'
+      Cluster:
+        Fn::ImportValue: !Sub ${EnvironmentName}:ClusterName
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 75
+      DesiredCount: !Ref 'DesiredCount'
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - Fn::ImportValue: !Sub ${EnvironmentName}:ServiceSecurityGroup
+          Subnets:
+            - Fn::ImportValue: !Sub ${EnvironmentName}:PublicSubnetOne
+            - Fn::ImportValue: !Sub ${EnvironmentName}:PublicSubnetTwo
+      TaskDefinition: !Ref 'TaskDefinition'
