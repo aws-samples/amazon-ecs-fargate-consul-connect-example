@@ -1,0 +1,285 @@
+# For testing/development purposes only!
+# 3/15/21 - service starts, but security group additions needed
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Deploy a ingress which exposes an internal Consul Connect service to the world
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: test
+    Description: The name of the environment to add this ingress to
+  ServiceName:
+    Type: String
+    Default: greeter
+    Description: Name of the service to expose
+  DesiredCount:
+    Type: Number
+    Default: 2
+    Description: How many copies of the ingress task to run
+  InitImageUrl:
+    Type: String
+    Description: The custom build image which will create the config files
+
+Resources:
+  # Public load balancer, hosted in public subnets that is accessible
+  # to the public, and is intended to route traffic to one or more public
+  # facing services. This is used for accepting traffic from the public
+  # internet and directing it to the Consul Connect proxy
+  PublicLoadBalancerSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Access to the public facing load balancer
+      VpcId:
+        Fn::ImportValue: !Sub ${EnvironmentName}:VpcId
+      SecurityGroupIngress:
+          # Allow access to ALB from anywhere on the internet
+          - CidrIp: 0.0.0.0/0
+            IpProtocol: -1
+  PublicLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      LoadBalancerAttributes:
+      - Key: idle_timeout.timeout_seconds
+        Value: '30'
+      Subnets:
+        # The load balancer is placed into the public subnets, so that traffic
+        # from the internet can reach the load balancer directly via the internet gateway
+        - Fn::ImportValue: !Sub ${EnvironmentName}:PublicSubnetOne
+        - Fn::ImportValue: !Sub ${EnvironmentName}:PublicSubnetTwo
+      SecurityGroups: [!Ref 'PublicLoadBalancerSG']
+
+  # This security group is used to authorize the load balancer to talk to the ingress task
+  IngressSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Access to the ingress task
+      VpcId:
+        Fn::ImportValue: !Sub ${EnvironmentName}:VpcId
+
+  IngressFromLoadBalancer:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow incoming connections to Consul Connect from container host
+      GroupId: !Ref IngressSecurityGroup
+      FromPort: 8080
+      ToPort: 8080
+      IpProtocol: tcp
+      SourceSecurityGroupId: !Ref 'PublicLoadBalancerSG'
+
+  # Create the target group into which the Consul proxy tasks will be registered,
+  # and the mapping which causes all traffic sent to the load balancer to be sent
+  # to this target group.
+  ConsulProxyTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 6
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      TargetType: ip
+      Name: !Sub ${ServiceName}-ingress
+      Port: 8080
+      Protocol: HTTP
+      UnhealthyThresholdCount: 2
+      VpcId:
+        Fn::ImportValue: !Sub ${EnvironmentName}:VpcId
+  PublicLoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn:
+      - PublicLoadBalancer
+    Properties:
+      DefaultActions:
+        - TargetGroupArn: !Ref 'ConsulProxyTargetGroup'
+          Type: 'forward'
+      LoadBalancerArn: !Ref 'PublicLoadBalancer'
+      Port: 80
+      Protocol: HTTP
+
+  # A log group for storing the stdout logs from this service's containers
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub ${EnvironmentName}-ingress-${ServiceName}
+
+  # Consul agent role. This role authorizes the Consul daemon to query the list of EC2 instances
+  # by tag in order to locate the Consul server.
+  ConsulAgentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: "ecs-tasks.amazonaws.com"
+          Action: ['sts:AssumeRole']
+      Path: /
+      Policies:
+      - PolicyName: query-ec2-instances
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action:
+              - 'ec2:DescribeInstances'
+            Resource: '*'
+
+  # Task execution role. This role authorizes the ECS agent to pull images from ECR 
+  # and post to CloudWatch logs.
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: "ecs-tasks.amazonaws.com"
+          Action: ['sts:AssumeRole']
+      Path: /
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  # The task definition. This is a simple metadata description of what
+  # container to run, and what resource requirements it has.
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${ServiceName}-ingress
+      NetworkMode: awsvpc
+      Cpu: 256
+      Memory: 512
+      ExecutionRoleArn: !GetAtt 'TaskExecutionRole.Arn'
+      TaskRoleArn: !GetAtt 'ConsulAgentRole.Arn'
+      Volumes:
+        - Name: consul-data
+        - Name: consul-config
+      ContainerDefinitions:
+
+        # This is a Nginx sidecar. This is needed because Consul Connect proxy
+        # binds to localhost and doesn't accept direct traffic from the public.
+        # This Nginx container does though and can serve as a proxy to the proxy.
+        - Name: !Sub ${ServiceName}-nginx
+          Image: nginx
+          EntryPoint:
+            - '/bin/sh'
+            - '-c'
+          Command:
+            - >
+              echo '
+                events {
+                  worker_connections  1024;
+                }
+                http
+                {
+                  upstream ingress
+                  {
+                    server localhost:3000;
+                  }
+                  server {
+                    listen 8080;
+                    location /
+                    {
+                      proxy_pass http://ingress;
+                      proxy_set_header Host $host;
+                      proxy_pass_request_headers on;
+                    }
+                  }
+                }
+              ' > /etc/nginx/nginx.conf &&
+              exec nginx -g 'daemon off;'
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8080
+          LogConfiguration:
+            LogDriver: 'awslogs'
+            Options:
+              awslogs-group: !Sub ${EnvironmentName}-ingress-${ServiceName}
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: nginx
+
+        # the agent which should join the mesh & register the service
+        - Name: ingress-agent
+          Image: !Ref 'InitImageUrl'
+          PortMappings:
+            - ContainerPort: 8301
+              Protocol: tcp
+            - ContainerPort: 8301
+              Protocol: udp
+            - ContainerPort: 8400
+              Protocol: tcp
+            - ContainerPort: 8500
+              Protocol: tcp
+            - ContainerPort: 53
+              Protocol: udp
+          MountPoints:
+              - ContainerPath: /consul/data
+                SourceVolume: consul-data
+                ReadOnly: false
+              - ContainerPath: /consul/config
+                SourceVolume: consul-config
+                ReadOnly: false
+          LogConfiguration:
+            LogDriver: 'awslogs'
+            Options:
+              awslogs-group: !Sub ${EnvironmentName}-ingress-${ServiceName}
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: 'ingress-agent'
+        
+        # This is a Consul Connect sidecar. It is configured to just provide proxy
+        # access to the referenced service on a specific port, this port can then be
+        # exposed to world via a load balancer
+        - Name: !Sub ${ServiceName}-ingress
+          Image: 'public.ecr.aws/hashicorp/consul:1.9.1'
+          DependsOn:
+            - ContainerName: ingress-agent
+              Condition: START
+          EntryPoint:
+            - '/bin/sh'
+            - '-c'
+          Command:
+            - !Sub >
+              exec consul connect proxy -sidecar-for ${ServiceName}-ingress
+          Essential: true
+          LogConfiguration:
+            LogDriver: 'awslogs'
+            Options:
+              awslogs-group: !Sub ${EnvironmentName}-ingress-${ServiceName}
+              awslogs-region: !Ref 'AWS::Region'
+              awslogs-stream-prefix: !Sub ${EnvironmentName}-ingress-${ServiceName}-proxy
+
+
+  # The service. The service is a resource which allows you to run multiple
+  # copies of a type of task, and gather up their logs and metrics, as well
+  # as monitor the number of running tasks and replace any that have crashed
+  Service:
+    Type: AWS::ECS::Service
+    DependsOn: PublicLoadBalancerListener
+    Properties:
+      ServiceName: !Sub ${ServiceName}-ingress
+      LaunchType: 'FARGATE'
+      Cluster:
+        Fn::ImportValue: !Sub ${EnvironmentName}:ClusterName
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 75
+      DesiredCount: !Ref 'DesiredCount'
+      TaskDefinition: !Ref 'TaskDefinition'
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !Ref 'IngressSecurityGroup'
+            - Fn::ImportValue: !Sub ${EnvironmentName}:ServiceSecurityGroup
+          Subnets:
+            - Fn::ImportValue: !Sub ${EnvironmentName}:PublicSubnetOne
+            - Fn::ImportValue: !Sub ${EnvironmentName}:PublicSubnetTwo
+      LoadBalancers:
+        - ContainerName: !Sub ${ServiceName}-nginx
+          ContainerPort: 8080
+          TargetGroupArn: !Ref 'ConsulProxyTargetGroup'
+
+Outputs:
+  ExternalUrl:
+    Description: The url of the external load balancer
+    Value: !Sub http://${PublicLoadBalancer.DNSName}
+    Export:
+      Name: !Sub ${EnvironmentName}:ExternalUrl

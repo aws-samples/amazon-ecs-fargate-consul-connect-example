@@ -1,0 +1,158 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Resources to setup Consul Connect for routing cluster traffic
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: test
+    Description: The name of the environment to add this Linkerd stack to
+  ECSAMI:
+    Description: AMI ID
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ecs/optimized-ami/amazon-linux-2/recommended/image_id
+    Description: The Amazon Machine Image ID used for the cluster, leave it as the default value to get the latest AMI
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: sfoDev
+    Description: The name of an SSH key that will be used to access the underlying hosts in the cluster. If none appear here you need to create and download an SSH key
+Resources:
+
+  EcsSecurityGroupIngressForSSHIpv4:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow incoming connections for SSH over IPv4
+      GroupId:
+        Fn::ImportValue: !Sub ${EnvironmentName}:ContainerSecurityGroup
+      FromPort: 22
+      ToPort: 22
+      IpProtocol: tcp
+      CidrIp: '0.0.0.0/0'
+
+  EcsSecurityGroupIngressForSSHIpv6:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow incoming connections for SSH over IPv6
+      GroupId:
+        Fn::ImportValue: !Sub ${EnvironmentName}:ContainerSecurityGroup
+      FromPort: 22
+      ToPort: 22
+      IpProtocol: tcp
+      CidrIpv6: '::/0'
+
+  # TODO: remove?
+  EcsSecurityGroupIngressFromCluster:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow incoming connections from one awsvpc networked task to another
+      GroupId:
+        Fn::ImportValue: !Sub ${EnvironmentName}:ContainerSecurityGroup
+      IpProtocol: -1
+      SourceSecurityGroupId:
+        Fn::ImportValue: !Sub ${EnvironmentName}:ContainerSecurityGroup
+
+  EcsSecurityGroupIngressFromConsulConnect:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow incoming connections from Consul clients in awsvpc tasks
+      GroupId:
+        Fn::ImportValue: !Sub ${EnvironmentName}:ContainerSecurityGroup
+      #FromPort: 8500
+      #ToPort: 8500
+      IpProtocol: -1
+      SourceSecurityGroupId: !Ref ServiceSecurityGroup
+
+  # A service level security group. This should be used for each service we deploy
+  # to lock them down so that they only accept inbound connections via
+  # Consul Connect, and its not possible to bypass and talk directly to the service
+  # container.
+  ServiceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Access to a task running in the Consul Connect cluster
+      VpcId:
+        Fn::ImportValue: !Sub ${EnvironmentName}:VpcId
+
+  # TODO: remove?
+  ServiceIngressToConsulConnect:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow incoming connections to Consul Connect from container host
+      GroupId: !Ref ServiceSecurityGroup
+      FromPort: 8080
+      ToPort: 8080
+      IpProtocol: tcp
+      SourceSecurityGroupId:
+        Fn::ImportValue: !Sub ${EnvironmentName}:ContainerSecurityGroup
+
+  ServiceIngressFromSelf:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow incoming connections to Consul Connect from other Consul Connects
+      GroupId: !Ref ServiceSecurityGroup
+      FromPort: 8080
+      ToPort: 8080
+      IpProtocol: tcp
+      SourceSecurityGroupId: !Ref ServiceSecurityGroup
+
+  # Consul instance (Note that this is a single standalone instance but
+  # should be HA for production, and potentially deployed in the ECS
+  # cluster as well)
+  ConsulInstance:
+    Type: AWS::EC2::Instance
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+    Properties:
+      SubnetId:
+        Fn::ImportValue: !Sub ${EnvironmentName}:PublicSubnetOne
+      ImageId: !Ref 'ECSAMI'
+      InstanceType: m4.xlarge
+      KeyName: !Ref 'KeyName'
+      UserData:
+        Fn::Base64:
+         Fn::Join:
+          - ''
+          - - |
+              #!/bin/bash -x
+              usermod -a -G docker ec2-user
+              EC2_INSTANCE_IP_ADDRESS=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
+              EC2_INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+              mkdir -p /opt/consul/data
+              mkdir -p /opt/consul/config
+
+              cat << EOF > /opt/consul/config/consul-server.json
+              {
+                "advertise_addr": "${EC2_INSTANCE_IP_ADDRESS}",
+                "client_addr": "0.0.0.0",
+                "connect": {
+                  "enabled": true
+                }
+              }
+              EOF
+
+              docker run -d --net=host -p 8300:8300 -p 8301:8301 -p 8301:8301/udp -p 8302:8302 \
+                -p 8302:8302/udp -p 8400:8400 -p 8500:8500 -p 53:53/udp \
+                -v /opt/consul/data:/consul/data -v /opt/consul/config:/consul/config \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                -h $EC2_INSTANCE_ID --name consul-server -e CONSUL_ALLOW_PRIVILEGED_PORTS=1 \
+                -l service_name=consul-server public.ecr.aws/hashicorp/consul:1.9.1 agent -server \
+                -bootstrap-expect 1 -ui -config-file /consul/config/consul-server.json
+            - !Sub |
+              # Notify CloudFormation that the instance is up and ready
+              yum install -y aws-cfn-bootstrap
+              /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource ConsulInstance --region ${AWS::Region}
+      SecurityGroupIds:
+        - Fn::ImportValue: !Sub ${EnvironmentName}:ContainerSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-consul-server
+
+Outputs:
+  ConsulSshTunnel:
+    Description: Command to run to open a local SSH tunnel to view the Consul dashboard
+    Value: !Sub ssh -i "~/.ssh/${KeyName}.pem" -L 127.0.0.1:8500:${ConsulInstance.PublicDnsName}:8500 ec2-user@${ConsulInstance.PublicDnsName}
+
+  ServiceSecurityGroup:
+    Description: A security group to be applied to any Consul Connect proxied service
+    Value: !Ref 'ServiceSecurityGroup'
+    Export:
+      Name: !Sub ${EnvironmentName}:ServiceSecurityGroup
