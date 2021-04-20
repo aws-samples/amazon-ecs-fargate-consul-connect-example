@@ -34,7 +34,7 @@ Now we're going to deploy a Consul connect server that our container services ca
 aws cloudformation deploy --template-file .\mesh-consul-connect.yml --stack-name ConsulMeshStack --parameter-overrides KeyName=$MY_SSH_KEY --region $AWS_REGION
 ```
 
-When stack creation completes, you should be able to SSH into your Consul server instance and access the Consul UI. The **SSH command will be in the stack output** and should look something like:
+When stack creation completes, you should be able to SSH into your Consul server instance and access the Consul UI. The SSH command you need to execute in order to set up port forwarding to view the Consul dashboard **will be in the stack output** and should look something like:
 ```bash
 # example of an output SSH command
 ssh -i "~/.ssh/MY_SSH_KEY.pem" -L 127.0.0.1:8500:ec2-0-96-158-00.eu-west-1.compute.amazonaws.com:8500 ec2-user@ec2-0-96-158-00.eu-west-1.compute.amazonaws.com
@@ -140,9 +140,9 @@ Click on the `greeter` service to view the topology of its connections to other 
 
 ![three new services in consul ui](imgs/greeter-topology-upstreams.PNG)
 
-Now let's test the connectivity between the services by hitting the `greeter` endpoint:
+Now let's test the connectivity between the services by hitting the `greeter` endpoint. In the same SSH session we opened to the Consul server, enter the following commands:
 ```bash
-# in your SSH session terminal, install the Consul binary
+# install the Consul binary
 sudo yum install -y wget unzip
 wget https://releases.hashicorp.com/consul/1.9.1/consul_1.9.1_linux_amd64.zip
 unzip consul_1.9.1_linux_amd64.zip
