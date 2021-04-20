@@ -28,13 +28,13 @@ aws cloudformation deploy --template-file .\cluster-fargate-consul-connect.yml -
 
 ## Deploy the Consul Connect server
 
-Now we're going to deploy a Consul connect server that our container services can join. In production, you would want to have an odd number of redundant server instances running in order to provide more robust and resilient consensus, but one server will work for this example.
+Now we're going to deploy a Consul connect server that our container services can join. In production, you would want to have an odd number of redundant server instances running in order to provide more robust and resilient consensus, but one server will work for this example. (If you're considering managed Consul server options, HashiCorp does offer [managed Consul on AWS](https://cloud.hashicorp.com/pricing/consul).)
 * NOTE: Make sure to select a valid key pair so you can SSH into the server instance and view the Consul UI.
 ```
 aws cloudformation deploy --template-file .\mesh-consul-connect.yml --stack-name ConsulMeshStack --parameter-overrides KeyName=$MY_SSH_KEY --region $AWS_REGION
 ```
 
-When stack creation completes, you should be able to SSH into your Consul server instance and access the Consul UI. The SSH command you need to execute in order to set up port forwarding to view the Consul dashboard **will be in the stack output** and should look something like:
+When stack creation completes, you should be able to SSH into your Consul server instance and access the Consul UI. The SSH command you need to run in order to set up port forwarding to view the Consul dashboard **will be in the CloudFormation stack output** and should look something like this:
 ```bash
 # example of an output SSH command
 ssh -i "~/.ssh/MY_SSH_KEY.pem" -L 127.0.0.1:8500:ec2-0-96-158-00.eu-west-1.compute.amazonaws.com:8500 ec2-user@ec2-0-96-158-00.eu-west-1.compute.amazonaws.com
@@ -159,7 +159,7 @@ From ip-10-0-1-64.eu-west-1.compute.internal: Greetings (ip-10-0-0-244.eu-west-1
 
 ## Deploy the Ingress service + Load Balancer
 
-To expose the `greeter` service to the internet, we'll create an `nginx` service with a Consul client which will to proxy requests to it via the mesh, and put that service behind an Application Load Balancer. 
+To expose the `greeter` service to the internet, we'll create an `nginx` service with a Consul client which will proxy requests to it via the mesh, and put that service behind an Application Load Balancer. 
 
 Build and push the ingress-init container
 ```bash
@@ -173,12 +173,12 @@ Deploy the service and ALB
 aws cloudformation deploy --template-file .\services\ingress\ingress-consul-connect-fargate.yml --stack-name ConsulIngress --parameter-overrides InitImageUrl=$ECR_URI/ingress-client --capabilities CAPABILITY_IAM --region $AWS_REGION
 ```
 
-When the stack is complete, the external URL of the ALB will appear as the stack output `ExternalUrl` - curl this endpoint and you should see a response from your service(s) in the mesh.
+When the stack is complete, the external URL of the ALB will appear in the stack output as `ExternalUrl` - curl this endpoint and you should see a response from the `greeter` service in the mesh.
 ```
-curl http://consu-publi-aaauv3we8kbg-87191928.ca-central-1.elb.amazonaws.com/
+curl http://consu-publi-aaauv3we8kbg-87191118.eu-west-1.elb.amazonaws.com/
 
 # response
-From ip-10-0-0-87.ca-central-1.compute.internal: Hello (ip-10-0-0-176.ca-central-1.compute.internal) Barbara (ip-10-0-1-203.ca-central-1.compute.internal)
+From ip-10-0-0-87.eu-west-1.compute.internal: Hello (ip-10-0-0-176.eu-west-1.compute.internal) Barbara (ip-10-0-1-203.eu-west-1.compute.internal)
 ```
 
 Navigating to the `greeter` service topology in the Consul UI should now show the `greeter-ingress` service as a downstream connection:
