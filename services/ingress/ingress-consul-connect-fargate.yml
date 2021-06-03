@@ -158,7 +158,7 @@ Resources:
         # binds to localhost and doesn't accept direct traffic from the public.
         # This Nginx container does though and can serve as a proxy to the proxy.
         - Name: !Sub ${ServiceName}-nginx
-          Image: nginx
+          Image: public.ecr.aws/nginx/nginx:stable
           EntryPoint:
             - '/bin/sh'
             - '-c'
