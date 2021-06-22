@@ -1,0 +1,31 @@
+{
+  "name": "amazon-ecs-fargate-consul-connect-example-cdk-construct",
+  "version": "0.1.0",
+  "bin": {
+    "amazon-ecs-fargate-consul-connect-example-cdk-construct": "bin/amazon-ecs-fargate-consul-connect-example-cdk-construct.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "test": "jest",
+    "cdk": "cdk"
+  },
+  "devDependencies": {
+    "@aws-cdk/assert": "1.108.1",
+    "@types/jest": "^26.0.10",
+    "@types/node": "10.17.27",
+    "aws-cdk": "1.108.1",
+    "jest": "^26.4.2",
+    "ts-jest": "^26.2.0",
+    "ts-node": "^9.0.0",
+    "typescript": "~3.9.7"
+  },
+  "dependencies": {
+    "@aws-cdk/aws-ecs": "^1.108.0",
+    "@aws-cdk/aws-sns": "1.108.1",
+    "@aws-cdk/aws-sns-subscriptions": "1.108.1",
+    "@aws-cdk/aws-sqs": "1.108.1",
+    "@aws-cdk/core": "1.108.1",
+    "cdk-ecr-deployment": "^0.0.39"
+  }
+}
