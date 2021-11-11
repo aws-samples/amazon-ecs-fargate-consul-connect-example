@@ -6,13 +6,11 @@ Parameters:
     Default: test
     Description: The name of the environment
   ECSAMI:
-    Description: AMI ID
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ecs/optimized-ami/amazon-linux-2/recommended/image_id
     Description: The Amazon Machine Image ID used for the cluster, leave it as the default value to get the latest AMI
   KeyName:
     Type: AWS::EC2::KeyPair::KeyName
-    Default: sfoDev
     Description: The name of an SSH key that will be used to access the underlying hosts in the Consul. If none appear here you need to create and download an SSH key
   AllowedIP:
     Type: String
