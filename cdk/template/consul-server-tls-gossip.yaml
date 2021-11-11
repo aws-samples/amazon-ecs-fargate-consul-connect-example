@@ -1,0 +1,253 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Resources to setup Consul server with TLS and gossip encryption enabled. For demonstration purpose only, do not use in production. 
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: test
+    Description: The name of the environment
+  ECSAMI:
+    Description: AMI ID
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ecs/optimized-ami/amazon-linux-2/recommended/image_id
+    Description: The Amazon Machine Image ID used for the cluster, leave it as the default value to get the latest AMI
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: sfoDev
+    Description: The name of an SSH key that will be used to access the underlying hosts in the Consul. If none appear here you need to create and download an SSH key
+  AllowedIP:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: The public IP range allowed to SSH to the Consul server
+
+Mappings:
+  SubnetConfig:
+    VPC:
+      CIDR: '10.0.0.0/16'
+    PublicOne:
+      CIDR: '10.0.0.0/24'
+    PublicTwo:
+      CIDR: '10.0.1.0/24'
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      CidrBlock: !FindInMap ['SubnetConfig', 'VPC', 'CIDR']
+  PublicSubnetOne:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+         Fn::Select:
+         - 0
+         - Fn::GetAZs: {Ref: 'AWS::Region'}
+      VpcId: !Ref 'VPC'
+      CidrBlock: !FindInMap ['SubnetConfig', 'PublicOne', 'CIDR']
+      MapPublicIpOnLaunch: true
+  PublicSubnetTwo:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone:
+         Fn::Select:
+         - 1
+         - Fn::GetAZs: {Ref: 'AWS::Region'}
+      VpcId: !Ref 'VPC'
+      CidrBlock: !FindInMap ['SubnetConfig', 'PublicTwo', 'CIDR']
+      MapPublicIpOnLaunch: true
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  GatewayAttachement:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref 'VPC'
+      InternetGatewayId: !Ref 'InternetGateway'
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPC'
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachement
+    Properties:
+      RouteTableId: !Ref 'PublicRouteTable'
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref 'InternetGateway'
+  PublicSubnetOneRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetOne
+      RouteTableId: !Ref PublicRouteTable
+  PublicSubnetTwoRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetTwo
+      RouteTableId: !Ref PublicRouteTable
+  ConsulSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Access to the ECS hosts that run containers
+      VpcId: !Ref 'VPC'
+  ConsulSecurityGroupIngressForSSHIpv4:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow incoming connections for SSH over IPv4
+      GroupId: !Ref ConsulSecurityGroup
+      FromPort: 22
+      ToPort: 22
+      IpProtocol: tcp
+      CidrIp: !Ref AllowedIP
+  ConsulSecretManagerRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Description: Allow Consul server to write to secrets manager
+      MaxSessionDuration: 3600
+      Path: /
+      Policies: 
+        - PolicyName: SecretsManagerOps
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: 'secretsmanager:CreateSecret'
+                Resource: !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:*
+                Condition:
+                  ForAnyValue:StringLike:
+                    secretsmanager:Name: [
+                        "my_consul-agent-ca*",
+                        "my_consul-gossip-key*"
+                    ]
+  ConsulInstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: /
+      Roles:
+        - !Ref ConsulSecretManagerRole
+  ConsulInstance:
+    Type: AWS::EC2::Instance
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+    Properties:
+      IamInstanceProfile: !Ref ConsulInstanceProfile
+      SubnetId: !Ref PublicSubnetOne
+      ImageId: !Ref 'ECSAMI'
+      InstanceType: t3.large
+      KeyName: !Ref 'KeyName'
+      UserData:
+        Fn::Base64:
+         Fn::Join:
+          - ''
+          - - |
+              #!/bin/bash -x
+              usermod -a -G docker ec2-user
+              EC2_INSTANCE_IP_ADDRESS=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
+              EC2_INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+              mkdir -p /opt/consul/data
+              mkdir -p /opt/consul/config
+
+              cat << EOF > /opt/consul/config/consul-server.json
+              {
+                "advertise_addr": "${EC2_INSTANCE_IP_ADDRESS}",
+                "client_addr": "0.0.0.0",
+                "connect": {
+                  "enabled": true
+                }
+              }
+              EOF
+
+              docker run -d --net=host -p 8300:8300 -p 8301:8301 -p 8301:8301/udp -p 8302:8302 \
+                -p 8302:8302/udp -p 8400:8400 -p 8500:8500 -p 53:53/udp \
+                -v /opt/consul/data:/consul/data -v /opt/consul/config:/consul/config \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                -h $EC2_INSTANCE_ID --name consul-server -e CONSUL_ALLOW_PRIVILEGED_PORTS=1 \
+                -l service_name=consul-server public.ecr.aws/hashicorp/consul:1.9.1 agent -server \
+                -bootstrap-expect 1 -ui -config-file /consul/config/consul-server.json
+
+              #Utillity
+              sudo yum install jq unzip wget -y
+              curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+              unzip awscliv2.zip
+              sudo ./aws/install
+              wget https://releases.hashicorp.com/consul/1.9.1/consul_1.9.1_linux_amd64.zip
+              unzip consul_1.9.1_linux_amd64.zip              
+              UUID=$(uuidgen)
+
+              #Generate Consul CA
+              ./consul tls ca create
+              aws secretsmanager create-secret --name my_consul-agent-ca-$UUID \
+              --description "Consul Agent CA public key" \
+              --secret-string file://consul-agent-ca.pem
+
+              #Generate Server certs
+              ./consul tls cert create -server -dc dc1
+              sudo mkdir /opt/consul/certs
+              sudo cp consul-agent-ca.pem /opt/consul/certs
+              sudo cp dc1-server-consul-0-key.pem /opt/consul/certs
+              sudo cp dc1-server-consul-0.pem /opt/consul/certs
+              sudo tee /opt/consul/config/tls.json > /dev/null << EOF
+              { 
+                  "ports": {"https": 8501},
+                  "verify_incoming_rpc": true,
+                  "verify_outgoing": true,
+                  "verify_server_hostname": true, 
+                  "ca_file": "/consul/certs/consul-agent-ca.pem", 
+                  "cert_file": "/consul/certs/dc1-server-consul-0.pem", 
+                  "key_file": "/consul/certs/dc1-server-consul-0-key.pem", 
+                  "auto_encrypt": { "allow_tls": true }
+              }
+              EOF
+
+              #Generate gossip
+              ./consul keygen > consul-agent-gossip.txt
+              aws secretsmanager create-secret --name my_consul-gossip-key-$UUID \
+              --description "Consul gossip key" \
+              --secret-string file://consul-agent-gossip.txt
+              EC2_INSTANCE_IP_ADDRESS=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
+              GOSSIP_SECRET=$(cat consul-agent-gossip.txt)
+              sudo tee /opt/consul/config/consul-server.json > /dev/null << EOF
+              {
+                "advertise_addr": "$EC2_INSTANCE_IP_ADDRESS",
+                "client_addr": "0.0.0.0",
+                "connect": {
+                  "enabled": true
+                },
+                "encrypt": "$GOSSIP_SECRET"
+              }
+              EOF
+
+              #Restart Consul
+              docker stop consul-server
+              docker rm consul-server 
+              EC2_INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+              docker run -d --net=host -p 8300:8300 -p 8301:8301 -p 8301:8301/udp -p 8302:8302 \
+              -p 8302:8302/udp -p 8400:8400 -p 8500:8500 -p 53:53/udp \
+              -v /opt/consul/data:/consul/data \
+              -v /opt/consul/config:/consul/config \
+              -v /opt/consul/certs:/consul/certs \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              -h $EC2_INSTANCE_ID --name consul-server -e CONSUL_ALLOW_PRIVILEGED_PORTS=1 \
+              -l service_name=consul-server public.ecr.aws/hashicorp/consul:1.9.1 agent -server \
+              -bootstrap-expect 1 -ui -config-file /consul/config/consul-server.json
+            - !Sub |
+              # Notify CloudFormation that the instance is up and ready
+              yum install -y aws-cfn-bootstrap
+              /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource ConsulInstance --region ${AWS::Region}
+      SecurityGroupIds:
+        - !Ref ConsulSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-consul-server
+Outputs:
+  ConsulSshTunnel:
+    Description: Command to run to open a local SSH tunnel to view the Consul dashboard
+    Value: !Sub ssh -i "~/.ssh/${KeyName}.pem" -L 127.0.0.1:8500:${ConsulInstance.PublicDnsName}:8500 ec2-user@${ConsulInstance.PublicDnsName}
