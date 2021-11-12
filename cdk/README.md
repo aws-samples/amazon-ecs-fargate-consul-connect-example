@@ -32,7 +32,7 @@ Create an empty directory on your system, initialize Typescript CDK project and 
 ```
 mkdir app1
 cd app1
-cdk init —language typescript
+cdk init --language typescript
 npm install @aws-cdk/core @aws-cdk/aws-ec2 @aws-cdk/aws-ecs @aws-cdk/aws-secretsmanager @aws-cdk-containers/ecs-service-extensions @aws-quickstart/ecs-consul-mesh-extension
 npm update
 ```
@@ -62,7 +62,7 @@ import * as ec2 from '@aws-cdk/aws-ec2';
 import * as ecs from '@aws-cdk/aws-ecs';
 import * as secretsmanager from '@aws-cdk/aws-secretsmanager';
 import { AssignPublicIpExtension, Container, Environment, Service, ServiceDescription, HttpLoadBalancerExtension } from '@aws-cdk-containers/ecs-service-extensions';
-import { ConsulMeshExtension, RetryJoin } from '@aws-quickstart/ecs-consul-mesh-extension';
+import { ECSConsulMeshExtension, RetryJoin } from '@aws-quickstart/ecs-consul-mesh-extension';
 
 export class App1Stack extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
@@ -92,7 +92,7 @@ export class App1Stack extends cdk.Stack {
       consulClientSecurityGroup,
       ec2.Port.udp(8301),
       "allow all the clients in the mesh talk to each other"
-    )
+    );
   }
 }
 ```
@@ -136,7 +136,7 @@ export class App1Stack extends cdk.Stack {
       image: ecs.ContainerImage.fromRegistry('nathanpeck/name')
     }));
  
-    nameDescription.add(new ConsulMeshExtension({      
+    nameDescription.add(new ECSConsulMeshExtension({      
       retryJoin: new RetryJoin({ region: "$AWS_REGION", tagName: "Name", tagValue: "test-consul-server" }),
       port: 3000,
       consulClientSecurityGroup: consulClientSecurityGroup,
@@ -176,7 +176,7 @@ export class App1Stack extends cdk.Stack {
     image: ecs.ContainerImage.fromRegistry('nathanpeck/greeting')
     }));
 
-    greetingDescription.add(new ConsulMeshExtension({
+    greetingDescription.add(new ECSConsulMeshExtension({
     retryJoin: new RetryJoin({ region: "$AWS_REGION", tagName: "Name", tagValue: "test-consul-server" }),
     port: 3000,
     consulClientSecurityGroup: consulClientSecurityGroup,
@@ -204,7 +204,7 @@ export class App1Stack extends cdk.Stack {
     image: ecs.ContainerImage.fromRegistry('nathanpeck/greeter'),
     }));
 
-    greeterDescription.add(new ConsulMeshExtension({
+    greeterDescription.add(new ECSConsulMeshExtension({
     retryJoin: new RetryJoin({ region: "$AWS_REGION", tagName: "Name", tagValue: "test-consul-server" }),
     port: 3000,
     consulClientSecurityGroup: consulClientSecurityGroup,
