@@ -249,3 +249,9 @@ Outputs:
   ConsulSshTunnel:
     Description: Command to run to open a local SSH tunnel to view the Consul dashboard
     Value: !Sub ssh -i "~/.ssh/${KeyName}.pem" -L 127.0.0.1:8500:${ConsulInstance.PublicDnsName}:8500 ec2-user@${ConsulInstance.PublicDnsName}
+  ConsulVPC:
+    Description: VPC id where Consul server deployed
+    Value: !Ref VPC    
+  ConsulSecurityGroup: 
+    Description: Security group attached to Consul server 
+    Value: !Ref ConsulSecurityGroup
