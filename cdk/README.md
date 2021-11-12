@@ -145,6 +145,7 @@ export class App1Stack extends cdk.Stack {
       gossipEncryptKey: gossipSecret,
       tls: true,
       serviceDiscoveryName: 'name',
+      consulDatacenter: 'dc1',
     }));
 
     nameDescription.add(new AssignPublicIpExtension());
@@ -170,57 +171,59 @@ export class App1Stack extends cdk.Stack {
     const greetingDescription = new ServiceDescription();
     
     greetingDescription.add(new Container({
-    cpu: 1024,
-    memoryMiB: 2048,
-    trafficPort: 3000,
-    image: ecs.ContainerImage.fromRegistry('nathanpeck/greeting')
+      cpu: 1024,
+      memoryMiB: 2048,
+      trafficPort: 3000,
+      image: ecs.ContainerImage.fromRegistry('nathanpeck/greeting')
     }));
 
     greetingDescription.add(new ECSConsulMeshExtension({
-    retryJoin: new RetryJoin({ region: '$AWS_REGION', tagName: 'Name', tagValue: 'test-consul-server' }),
-    port: 3000,
-    consulClientSecurityGroup: consulClientSecurityGroup,
-    consulServerSecurityGroup: consulServerSecurityGroup,
-    consulCACert: agentCASecret,
-    gossipEncryptKey: gossipSecret,
-    tls: true,
-    serviceDiscoveryName: 'greeting',
+      retryJoin: new RetryJoin({ region: '$AWS_REGION', tagName: 'Name', tagValue: 'test-consul-server' }),
+      port: 3000,
+      consulClientSecurityGroup: consulClientSecurityGroup,
+      consulServerSecurityGroup: consulServerSecurityGroup,
+      consulCACert: agentCASecret,
+      gossipEncryptKey: gossipSecret,
+      tls: true,
+      serviceDiscoveryName: 'greeting',
+      consulDatacenter: 'dc1',
     }));
 
     greetingDescription.add(new AssignPublicIpExtension());
     
     const greeting = new Service(this, 'greeting', {
-    environment: environment,
-    serviceDescription: greetingDescription,
+      environment: environment,
+      serviceDescription: greetingDescription,
     });
 
     // GREETER service
     const greeterDescription = new ServiceDescription();
     
     greeterDescription.add(new Container({
-    cpu: 1024,
-    memoryMiB: 2048,
-    trafficPort: 3000,
-    image: ecs.ContainerImage.fromRegistry('nathanpeck/greeter'),
+      cpu: 1024,
+      memoryMiB: 2048,
+      trafficPort: 3000,
+      image: ecs.ContainerImage.fromRegistry('nathanpeck/greeter'),
     }));
 
     greeterDescription.add(new ECSConsulMeshExtension({
-    retryJoin: new RetryJoin({ region: '$AWS_REGION', tagName: 'Name', tagValue: 'test-consul-server' }),
-    port: 3000,
-    consulClientSecurityGroup: consulClientSecurityGroup,
-    consulServerSecurityGroup: consulServerSecurityGroup,
-    consulCACert: agentCASecret,
-    gossipEncryptKey: gossipSecret,
-    tls: true,
-    serviceDiscoveryName: 'greeter',
+      retryJoin: new RetryJoin({ region: '$AWS_REGION', tagName: 'Name', tagValue: 'test-consul-server' }),
+      port: 3000,
+      consulClientSecurityGroup: consulClientSecurityGroup,
+      consulServerSecurityGroup: consulServerSecurityGroup,
+      consulCACert: agentCASecret,
+      gossipEncryptKey: gossipSecret,
+      tls: true,
+      serviceDiscoveryName: 'greeter',
+      consulDatacenter: 'dc1',
     }));
 
     greeterDescription.add(new AssignPublicIpExtension());
     greeterDescription.add(new HttpLoadBalancerExtension());
     
     const greeter = new Service(this, 'greeter', {
-    environment: environment,
-    serviceDescription: greeterDescription,
+      environment: environment,
+      serviceDescription: greeterDescription,
     });
   }
 }
