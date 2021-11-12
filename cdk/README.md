@@ -69,7 +69,7 @@ export class App1Stack extends cdk.Stack {
     super(scope, id, props);
 
     //change with your vpc id
-    const vpc = ec2.Vpc.fromLookup(this, 'consulVPC', { vpcId: "$MY_VPC_ID", region: "$AWS_REGION" })
+    const vpc = ec2.Vpc.fromLookup(this, 'consulVPC', { vpcId: '$MY_VPC_ID', region: '$AWS_REGION' })
 
     const environment = new Environment(this, 'demo', {
       vpc: vpc
@@ -137,14 +137,14 @@ export class App1Stack extends cdk.Stack {
     }));
  
     nameDescription.add(new ECSConsulMeshExtension({      
-      retryJoin: new RetryJoin({ region: "$AWS_REGION", tagName: "Name", tagValue: "test-consul-server" }),
+      retryJoin: new RetryJoin({ region: '$AWS_REGION', tagName: 'Name', tagValue: 'test-consul-server' }),
       port: 3000,
       consulClientSecurityGroup: consulClientSecurityGroup,
       consulServerSecurityGroup: consulServerSecurityGroup,
       consulCACert: agentCASecret,
       gossipEncryptKey: gossipSecret,
       tls: true,
-      serviceDiscoveryName: "name",
+      serviceDiscoveryName: 'name',
     }));
 
     nameDescription.add(new AssignPublicIpExtension());
@@ -177,14 +177,14 @@ export class App1Stack extends cdk.Stack {
     }));
 
     greetingDescription.add(new ECSConsulMeshExtension({
-    retryJoin: new RetryJoin({ region: "$AWS_REGION", tagName: "Name", tagValue: "test-consul-server" }),
+    retryJoin: new RetryJoin({ region: '$AWS_REGION', tagName: 'Name', tagValue: 'test-consul-server' }),
     port: 3000,
     consulClientSecurityGroup: consulClientSecurityGroup,
     consulServerSecurityGroup: consulServerSecurityGroup,
     consulCACert: agentCASecret,
     gossipEncryptKey: gossipSecret,
     tls: true,
-    serviceDiscoveryName: "greeting",
+    serviceDiscoveryName: 'greeting',
     }));
 
     greetingDescription.add(new AssignPublicIpExtension());
@@ -205,14 +205,14 @@ export class App1Stack extends cdk.Stack {
     }));
 
     greeterDescription.add(new ECSConsulMeshExtension({
-    retryJoin: new RetryJoin({ region: "$AWS_REGION", tagName: "Name", tagValue: "test-consul-server" }),
+    retryJoin: new RetryJoin({ region: '$AWS_REGION', tagName: 'Name', tagValue: 'test-consul-server' }),
     port: 3000,
     consulClientSecurityGroup: consulClientSecurityGroup,
     consulServerSecurityGroup: consulServerSecurityGroup,
     consulCACert: agentCASecret,
     gossipEncryptKey: gossipSecret,
     tls: true,
-    serviceDiscoveryName: "greeter",
+    serviceDiscoveryName: 'greeter',
     }));
 
     greeterDescription.add(new AssignPublicIpExtension());
