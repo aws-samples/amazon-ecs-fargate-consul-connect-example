@@ -1,9 +1,12 @@
 # Example CDK implementation - Amazon ECS on AWS Fargate with Consul Connect service mesh
 
-In this example we'll configure one Consul server in VPC with TLS and gossip encryption enabled. Using AWS CDK, we'll create and deploy the application stack that will launch ECS cluster with sample `greeter` application connected to Consul service mesh.
+In this example we'll configure one Consul server in VPC with TLS and gossip encryption enabled. Using [AWS CDK ECS service extension for Consul](https://github.com/aws-ia/ecs-consul-mesh-extension), we'll create and deploy the application stack that will launch ECS cluster with sample `greeter` application connected to Consul service mesh.
 
-## Requirements:
-* AWS CLI with valid AWS account credentials configured
+## Pre-requisites:
+* AWS CLI with valid AWS account credentials configured.
+* The AWS CDK uses Node.js (>= 10.13.0, except for versions 13.0.0 - 13.6.0). A version in active long-term support (14.x at this writing) is recommended.
+* We highly recommend to use an IDE that supports code-completion and syntax highlighting, i.e. VSCode, AWS Cloud9, Atom, etc.
+* AWS CDK Toolkit, you can install it via: `npm install -g aws-cdk`
 
 ## Step 1 - Create the VPC and Consul server
 
@@ -20,11 +23,6 @@ Once it's deployed, take note of the following from the output:
 You can use the string `ConsulSshTunnel` from the CloudFormation output to create SSH tunnel to the Consul server and then access it's UI from http://localhost:8500/ui/
 
 ## Step 2 - Create the sample CDK application
-
-### Pre-requisites
-* We highly recommend to use an IDE that supports code-completion and syntax highlighting, i.e. VSCode, AWS Cloud9, Atom, etc.
-* AWS CDK Toolkit `npm install -g aws-cdk`
-* AWS CLI with valid AWS account credentials configured
 
 ### Create project directory
 Create an empty directory on your system, initialize Typescript CDK project and install NPM packages.
@@ -274,4 +272,5 @@ aws cloudformation delete-stack --stack-name ConsulServer --region $AWS_REGION
 
 ## Reference
 
-* See full example [here](app/)
+* In hurry? see the full example [here](app/)
+* Check the [ECS Consul Mesh CDK repo](https://github.com/aws-ia/ecs-consul-mesh-extension)
