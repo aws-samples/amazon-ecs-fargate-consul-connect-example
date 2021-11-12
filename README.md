@@ -2,6 +2,7 @@
 
 In this example we'll configure several Amazon ECS container services running on AWS Fargate to join and communicate via a [Consul Connect service mesh](https://www.consul.io/) with a control plane hosted in Amazon EC2.
 
+For similar example using AWS CDK, see the full example [here](cdk/)
 
 ## Architecture
 At the end of this demo you should have an architecture which resembles the following:
