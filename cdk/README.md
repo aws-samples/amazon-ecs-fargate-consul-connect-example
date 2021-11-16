@@ -8,7 +8,7 @@ In this example we'll configure one Consul server in VPC with TLS and gossip enc
 * We highly recommend to use an IDE that supports code-completion and syntax highlighting, i.e. VSCode, AWS Cloud9, Atom, etc.
 * AWS CDK Toolkit, you can install it via: `npm install -g aws-cdk`
 
-### Step 1: Create the project directory
+## Step 1: Create the project directory
 First create an empty directory on your system, initialize Typescript CDK project and install NPM packages.
 
 ```
@@ -38,10 +38,13 @@ export interface EnvironmentInputProps extends cdk.StackProps {
 
 `lib/environment.ts`
 ```ts
-import * as ec2 from '@aws-cdk/aws-ec2';
 import * as cdk from '@aws-cdk/core';
+import * as ec2 from "@aws-cdk/aws-ec2";
+import { EnvironmentInputProps } from './shared-props';
 
-export class ConsulEnvironment extends cdk.Stack {
+export class Environment extends cdk.Stack {
+  public readonly props: EnvironmentOutputProps;
+
   constructor(scope: cdk.Construct, id: string, inputProps: EnvironmentInputProps) {
     super(scope, id, inputProps);
     
@@ -55,7 +58,7 @@ export class ConsulEnvironment extends cdk.Stack {
           name: 'PublicSubnetTwo',
           subnetType: ec2.SubnetType.PUBLIC,
         }]    
-    });
+    });    
     const serverSecurityGroup = new ec2.SecurityGroup(this, 'ConsulServerSecurityGroup', {
       vpc,
       description: 'Access to the ECS hosts that run containers',
@@ -64,7 +67,6 @@ export class ConsulEnvironment extends cdk.Stack {
       ec2.Peer.ipv4(inputProps.allowedIpCidr), 
       ec2.Port.tcp(22), 
       'Allow incoming connections for SSH over IPv4');
-
   }
 }
 ```
@@ -74,12 +76,13 @@ export class ConsulEnvironment extends cdk.Stack {
 #!/usr/bin/env node
 import 'source-map-support/register';
 import * as cdk from '@aws-cdk/core';
-import { ConsulEnvironment } from '../lib/environment';
+import { Environment } from '../lib/environment';
 
 const app = new cdk.App();
+
 // Environment
 var allowedIPCidr = process.env.ALLOWED_IP_CIDR || `$ALLOWED_IP_CIDR`;
-const environment = new ConsulEnvironment(app, 'ConsulEnvironment', {
+const environment = new Environment(app, 'ConsulEnvironment', {
     envName: 'test',
     allowedIpCidr: allowedIPCidr,
 });
@@ -87,7 +90,7 @@ const environment = new ConsulEnvironment(app, 'ConsulEnvironment', {
 
 ### Deploy the environment
 ```
-// Make sure to set the variable $ALLOWED_IP_CIDR
+// Make sure to set the environment variable $ALLOWED_IP_CIDR
 cdk synth
 cdk deploy
 ```
@@ -112,7 +115,7 @@ Update `lib/environment.ts`
 ```ts
 import { EnvironmentInputProps, EnvironmentOutputProps } from './shared-props';
 
-// Outside the construct
+// Set a class variable
   public readonly props: EnvironmentOutputProps;
 
 // Set them in the constructor at the very end
@@ -126,14 +129,11 @@ import { EnvironmentInputProps, EnvironmentOutputProps } from './shared-props';
 ###  Consul Server setup
 Create input props `lib/shared-props.ts` 
 ```ts
-import * as ec2 from '@aws-cdk/aws-ec2';
-
 export interface ServerInputProps extends cdk.StackProps {
   envProps: EnvironmentOutputProps,
   keyName: string,
 }
 ```
-
 
 Create `lib/consul-server.ts`
 ```ts
@@ -145,6 +145,7 @@ import { ServerInputProps } from './shared-props';
 
 export class ConsulServer extends cdk.Stack {
   public readonly serverTag: {[key:string]: string};
+  public readonly datacenter: string;
 
   constructor(scope: cdk.Construct, id: string, inputProps: ServerInputProps) {
     super(scope, id, inputProps);
@@ -166,13 +167,14 @@ export class ConsulServer extends cdk.Stack {
     const userData = ec2.UserData.forLinux();
     const userDataScript = fs.readFileSync('./lib/user-data.txt', 'utf8');
     userData.addCommands(userDataScript);    
+    const consulInstanceName = 'ConsulInstance';
     userData.addCommands(
     `# Notify CloudFormation that the instance is up and ready`,
     `yum install -y aws-cfn-bootstrap`,
-    `/opt/aws/bin/cfn-signal -e $? --stack ${cdk.Stack.of(this).stackName} --resource ConsulInstance --region ${cdk.Stack.of(this).region}`);
+    `/opt/aws/bin/cfn-signal -e $? --stack ${cdk.Stack.of(this).stackName} --resource ${consulInstanceName} --region ${cdk.Stack.of(this).region}`);
 
     const vpc = inputProps.envProps.vpc;
-    const consulServer = new ec2.Instance(this, 'ConsulServer', {
+    const consulServer = new ec2.Instance(this, consulInstanceName, {
       vpc: vpc,
       securityGroup: inputProps.envProps.serverSecurityGroup,
       instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3,ec2.InstanceSize.LARGE),
@@ -181,12 +183,23 @@ export class ConsulServer extends cdk.Stack {
       role: role,
       userData: userData,
     });
+    var cfnInstance = consulServer.node.defaultChild as ec2.CfnInstance
+    cfnInstance.overrideLogicalId(consulInstanceName);
+
+    this.datacenter = 'dc1';
     
     const tagName = 'Name'
     const tagValue = inputProps.envProps.envName + '-consul-server';
     cdk.Tags.of(scope).add(tagName, tagValue);
     const serverTag = { tagName: tagValue };
     this.serverTag = serverTag;
+
+    new cdk.CfnOutput(this, 'ConsulSshTunnel', {
+      value: `ssh -i "~/.ssh/`+ inputProps.keyName + `.pem" ` +
+       `-L 127.0.0.1:8500:` + consulServer.instancePublicDnsName + `:8500 ` +
+       `ec2-user@` + consulServer.instancePublicDnsName,
+      description: "Command to run to open a local SSH tunnel to view the Consul dashboard",
+    });
   }
 }
 ```
@@ -205,7 +218,7 @@ const server = new ConsulServer(app, 'ConsulServer', {
 });
 ```
 
-### Deploy the environment
+### Deploy the server
 ```
 // Make sure to set the variable $MY_KEY_NAME
 cdk synth
@@ -252,11 +265,13 @@ import * as secretsmanager from '@aws-cdk/aws-secretsmanager';
 
 export class ServerOutputProps {
   serverTag: {[key: string]: string};
+  serverDataCenter: string;
   agentCASecret: secretsmanager.ISecret;
   gossipKeySecret: secretsmanager.ISecret;
 
   constructor(serverScope: ConsulServer, agentCASecretArn: string, gossipKeySecretArn: string) {
     this.serverTag = serverScope.serverTag;
+    this.serverDataCenter = serverScope.datacenter;
     this.agentCASecret = secretsmanager.Secret.fromSecretAttributes(serverScope, 'ImportedConsulAgentCA', {
       secretArn: agentCASecretArn
     });
@@ -313,22 +328,28 @@ import * as extensions from "@aws-cdk-containers/ecs-service-extensions";
 ### Deploy the environment
 ```
 cdk synth
-cdk deploy
+cdk deploy --all
 ```
 
 ## Step 5: Build and Deploy Microservices with Consul Clients
 
-### Create a new Microservice stack `lib/shared-props.ts`
+### Create a new Microservice stack `lib/microservices.ts`
 ```ts
 import * as cdk from '@aws-cdk/core';
+import * as ecs from '@aws-cdk/aws-ecs';
+import * as consul_ecs from '@aws-quickstart/ecs-consul-mesh-extension';
+import * as ecs_extensions from "@aws-cdk-containers/ecs-service-extensions";
 import { EnvironmentOutputProps, ServerOutputProps } from './shared-props';
 
 export class Microservices extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string, envProps:EnvironmentOutputProps, serverProps: ServerOutputProps) {
       super(scope, id, {});
 
-      // Consul Client Configuration
-      const retryJoin = new consul_ecs.RetryJoin({ region: cdk.Stack.of(this).region, tagName: inputProps.serverTag.key, tagValue: inputProps.serverTag.tagValue});
+      // Consul Client Base Configuration
+      const retryJoin = new consul_ecs.RetryJoin({ 
+        region: cdk.Stack.of(this).region, 
+        tagName: serverProps.serverTag.key, 
+        tagValue: serverProps.serverTag.tagValue});
       const baseProps = {      
         retryJoin,
         consulClientSecurityGroup: envProps.clientSecurityGroup,
@@ -336,7 +357,7 @@ export class Microservices extends cdk.Stack {
         consulCACert: serverProps.agentCASecret,
         gossipEncryptKey: serverProps.gossipKeySecret,
         tls: true,
-        consulDatacenter: 'dc1',
+        consulDatacenter: serverProps.serverDataCenter,
       };
     }
   }
@@ -349,14 +370,82 @@ export class Microservices extends cdk.Stack {
 const microservices = new Microservices(app, 'ConsulMicroservices', environment.props, serverProps);
 ```
 
-### Name Service
+### Add the `name` service in `lib/microservices.ts`
+```ts
+      const nameDescription = new ecs_extensions.ServiceDescription();
+      nameDescription.add(new ecs_extensions.Container({
+        cpu: 1024,
+        memoryMiB: 2048,
+        trafficPort: 3000,
+        image: ecs.ContainerImage.fromRegistry('nathanpeck/name')
+      }));
+      nameDescription.add(new consul_ecs.ECSConsulMeshExtension({
+        ...baseProps,
+        serviceDiscoveryName: 'name',
+      }));
+      nameDescription.add(new ecs_extensions.AssignPublicIpExtension());
+      const name = new ecs_extensions.Service(this, 'name', {
+        environment: envProps.ecsEnvironment,
+        serviceDescription: nameDescription
+      });
+```
+
+### Add the `greeting` service in `lib/microservices.ts`
+```ts
+      // GREETING service
+      const greetingDescription = new ecs_extensions.ServiceDescription();
+      greetingDescription.add(new ecs_extensions.Container({
+        cpu: 1024,
+        memoryMiB: 2048,
+        trafficPort: 3000,
+        image: ecs.ContainerImage.fromRegistry('nathanpeck/greeting')
+      }));
+      greetingDescription.add(new consul_ecs.ECSConsulMeshExtension({
+        ...baseProps,
+        serviceDiscoveryName: 'greeting',
+      }));
+      greetingDescription.add(new ecs_extensions.AssignPublicIpExtension());
+      const greeting = new ecs_extensions.Service(this, 'greeting', {
+        environment: envProps.ecsEnvironment,
+        serviceDescription: greetingDescription,
+      });
+```
+
+### Add the `greeter` service in `lib/microservices.ts`
+```ts
+      // GREETER service
+      const greeterDescription = new ecs_extensions.ServiceDescription();
+      greeterDescription.add(new ecs_extensions.Container({
+        cpu: 1024,
+        memoryMiB: 2048,
+        trafficPort: 3000,
+        image: ecs.ContainerImage.fromRegistry('nathanpeck/greeter'),
+      }));
+      greeterDescription.add(new consul_ecs.ECSConsulMeshExtension({
+        ...baseProps,
+        serviceDiscoveryName: 'greeter',
+      }));
+      greeterDescription.add(new ecs_extensions.AssignPublicIpExtension());
+      greeterDescription.add(new ecs_extensions.HttpLoadBalancerExtension());
+      const greeter = new ecs_extensions.Service(this, 'greeter', {
+        environment: envProps.ecsEnvironment,
+        serviceDescription: greeterDescription,
+      });
+```
+
+### As final touch, connect `greeter` to `greeting` and `name` services
+```ts
+      // CONSUL CONNECT
+      greeter.connectTo(name, 3000);
+      greeter.connectTo(greeting, 3001);
+```
 
 ### Deploy the app
 
 From your terminal, run:
 
 ```
-cdk deploy
+cdk deploy --all
 ```
 
 ![AWS CDK toolkit output showing the ELB URL](imgs/cdk-output.png)
@@ -365,7 +454,10 @@ Get the ELB URL from the output and hit it on your browser to check the result
 
 ![Browser output showing the random greeting and name output](imgs/elb-output.png)
 
-## Step 5 - Clean up
+You can use the string ConsulSshTunnel from the ConsulServer output to create SSH tunnel to the Consul server and then access it's UI from http://localhost:8500/ui/
+
+
+## Step 6: Clean up
 
 From your terminal, destroy all stacks
 
