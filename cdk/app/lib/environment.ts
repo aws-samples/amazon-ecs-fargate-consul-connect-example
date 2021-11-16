@@ -9,18 +9,33 @@ export class Environment extends cdk.Stack {
     super(scope, id, props);
     
     const vpc = new ec2.Vpc(this, 'ConsulVPC', {});    
-    const securityGroup = new ec2.SecurityGroup(this, 'ConsulSecurityGroup', {
+    const serverSecurityGroup = new ec2.SecurityGroup(this, 'ConsulServerSecurityGroup', {
       vpc,
       description: 'Access to the ECS hosts that run containers',
     });
-    securityGroup.addIngressRule(
+    serverSecurityGroup.addIngressRule(
       ec2.Peer.ipv4(`$ALLOWED_IP_CIDR`), 
       ec2.Port.tcp(22), 
       'Allow incoming connections for SSH over IPv4');
+    
+    const clientSecurityGroup = new ec2.SecurityGroup(this, 'ConsulClientSecurityGroup', {
+      vpc,
+    });
+    clientSecurityGroup.addIngressRule(
+      clientSecurityGroup,
+      ec2.Port.tcp(8301),
+      'allow all the clients in the mesh talk to each other'
+    );
+    clientSecurityGroup.addIngressRule(
+      clientSecurityGroup,
+      ec2.Port.udp(8301),
+      'allow all the clients in the mesh talk to each other'
+    )
 
     this.props = {
       vpc,
-      securityGroup,
+      serverSecurityGroup,
+      clientSecurityGroup
     };
   }
 }

@@ -16,7 +16,7 @@ mkdir app && cd app
 cdk init --language typescript
 cdk bootstrap aws://{ACCOUNT}/{REGION}
 
-npm install @aws-cdk/core @aws-cdk/aws-ec2 @aws-cdk/aws-ecs @aws-cdk/aws-secretsmanager @aws-cdk-containers/ecs-service-extensions @aws-quickstart/ecs-consul-mesh-extension
+npm install @aws-cdk/core @aws-cdk/aws-ec2 @aws-cdk/aws-ecs @aws-cdk/aws-iam @aws-cdk/aws-secretsmanager @aws-cdk-containers/ecs-service-extensions @aws-quickstart/ecs-consul-mesh-extension
 npm update
 ```
 
@@ -35,11 +35,11 @@ export class Environment extends cdk.Stack {
     super(scope, id, props);
     
     const vpc = new ec2.Vpc(this, 'ConsulAppVPC', {});    
-    const securityGroup = new ec2.SecurityGroup(this, 'ConsulSecurityGroup', {
+    const serverSecurityGroup = new ec2.SecurityGroup(this, 'ConsulServerSecurityGroup', {
       vpc,
       description: 'Access to the ECS hosts that run containers',
     });
-    securityGroup.addIngressRule(
+    serverSecurityGroup.addIngressRule(
       ec2.Peer.ipv4($ALLOWED_IP_CIDR), 
       ec2.Port.tcp(22), 
       'Allow incoming connections for SSH over IPv4');
@@ -76,8 +76,8 @@ import * as cdk from '@aws-cdk/core';
 import * as ec2 from '@aws-cdk/aws-ec2';
 
 export interface EnvironmentProps extends cdk.StackProps {
-  vpc: ec2.Vpc,
-  securityGroup: ec2.SecurityGroup,
+  vpc: ec2.Vpc;
+  serverSecurityGroup: ec2.SecurityGroup;
 }
 ```
 
@@ -90,7 +90,7 @@ Update `lib/environment.ts`
 // Set them in the constructor at the very end
   this.props = {
     vpc,
-    securityGroup,
+    serverSecurityGroup,
   };
 ```
 
@@ -128,7 +128,7 @@ export class ConsulServer extends cdk.Stack {
 
     const consulServer = new ec2.Instance(this, 'ConsulServer', {
       vpc: props.vpc,
-      securityGroup: props.securityGroup,
+      securityGroup: props.serverSecurityGroup,
       instanceType: new ec2.InstanceType('t3.large'),
       machineImage: ami,
       keyName: $MY_KEY_NAME,
@@ -155,9 +155,81 @@ cdk synth
 cdk deploy --all
 ```
 
-## Step 4: Create the sample CDK application
+## Step 4: Prepare the Environment for Consul Client
 
-TBD
+### Setup Consul Client Security Group
+Update `lib/shared-props.ts` in EnvironmentProps to also add:
+```ts
+  clientSecurityGroup: ec2.SecurityGroup;
+```
+
+Update `lib/environment.ts` to add a security group for Consul Clients
+```ts 
+    const clientSecurityGroup = new ec2.SecurityGroup(this, 'ConsulClientSecurityGroup', {
+      vpc,
+    });
+    clientSecurityGroup.addIngressRule(
+      clientSecurityGroup,
+      ec2.Port.tcp(8301),
+      'allow all the clients in the mesh talk to each other'
+    );
+    clientSecurityGroup.addIngressRule(
+      clientSecurityGroup,
+      ec2.Port.udp(8301),
+      'allow all the clients in the mesh talk to each other'
+    )
+```
+### Setup Secret variables
+Step 3 `ConsulServer` stack launched the Consul Server, which created two AWS Secrets Manager secrets for Agent CA and Gossip Key. Use AWS console / CLI to retrieve these values (Note that this output is not visible on the CloudFormation stack). Replace `$CONSUL_AGENT_CA_ARN` with the ARN of Secrets Manager Agent CA. Replace `$CONSUL_GOSSIP_KEY_ARN` with the ARN of Secrets Manager Agent Gossip.
+
+Update `lib/shared-props.ts` to create a new 
+```ts
+import * as secretsmanager from '@aws-cdk/aws-secretsmanager';
+
+export class ServerProps {
+  agentCASecret: secretsmanager.ISecret;
+  gossipKeySecret: secretsmanager.ISecret;
+
+  constructor(scope: cdk.Construct, agentCASecretArn: string, gossipKeySecretArn: string) {
+    this.agentCASecret = secretsmanager.Secret.fromSecretAttributes(scope, 'ImportedConsulAgentCA', {
+      secretArn: agentCASecretArn
+    });
+    this.gossipKeySecret = secretsmanager.Secret.fromSecretAttributes(scope, 'ImportedConsulGossipKey', {
+      secretArn: gossipKeySecretArn
+    });
+  }
+}
+```
+
+Update `bin/app.ts` to setup the secrets to be passed to the next stage 
+```ts
+import { ServerProps } from '../lib/shared-props';
+
+const server = new ConsulServer(app, 'ConsulServer', environment.props);
+const agentCASecretArn = `$CONSUL_AGENT_CA_ARN`;
+const gossipKeySecretArn = `$CONSUL_GOSSIP_KEY_ARN`;
+const serverProps = new ServerProps(server, agentCASecretArn, gossipKeySecretArn);
+```
+
+## Step 5: Build and Deploy Microservices with Consul Clients
+
+### Create a new Microservice stack `lib/shared-props.ts`
+```ts
+import * as cdk from '@aws-cdk/core';
+import { ServerProps } from './shared-props';
+
+export class Microservices extends cdk.Stack {
+  constructor(scope: cdk.Construct, id: string, props: ServerProps) {
+    super(scope, id, {});
+  }
+}
+```
+
+### Modify app entry point `bin/app.ts`
+```ts
+const microservices = new Microservices(app, 'ConsulMicroservices', serverProps)
+```
+
 
 ### Deploy the app
 
