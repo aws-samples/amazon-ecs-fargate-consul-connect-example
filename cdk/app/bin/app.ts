@@ -26,4 +26,4 @@ var gossipKeySecretArn= process.env.CONSUL_GOSSIP_KEY_ARN || `$CONSUL_GOSSIP_KEY
 const serverProps = new ServerOutputProps(server, agentCASecretArn, gossipKeySecretArn);
 
 // Microservices with Consul Client
-const microservices = new Microservices(app, 'ConsulMicroservices', serverProps);
+const microservices = new Microservices(app, 'ConsulMicroservices', environment.props, serverProps);

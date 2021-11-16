@@ -41,7 +41,7 @@ export interface EnvironmentInputProps extends cdk.StackProps {
 import * as ec2 from '@aws-cdk/aws-ec2';
 import * as cdk from '@aws-cdk/core';
 
-export class Environment extends cdk.Stack {
+export class ConsulEnvironment extends cdk.Stack {
   constructor(scope: cdk.Construct, id: string, inputProps: EnvironmentInputProps) {
     super(scope, id, inputProps);
     
@@ -74,12 +74,12 @@ export class Environment extends cdk.Stack {
 #!/usr/bin/env node
 import 'source-map-support/register';
 import * as cdk from '@aws-cdk/core';
-import { Environment } from '../lib/environment';
+import { ConsulEnvironment } from '../lib/environment';
 
 const app = new cdk.App();
 // Environment
 var allowedIPCidr = process.env.ALLOWED_IP_CIDR || `$ALLOWED_IP_CIDR`;
-const environment = new Environment(app, 'ConsulEnvironment', {
+const environment = new ConsulEnvironment(app, 'ConsulEnvironment', {
     envName: 'test',
     allowedIpCidr: allowedIPCidr,
 });
@@ -137,6 +137,7 @@ export interface ServerInputProps extends cdk.StackProps {
 
 Create `lib/consul-server.ts`
 ```ts
+import * as fs from 'fs';
 import * as cdk from '@aws-cdk/core';
 import * as ec2 from "@aws-cdk/aws-ec2";
 import * as iam from "@aws-cdk/aws-iam";
@@ -163,7 +164,8 @@ export class ConsulServer extends cdk.Stack {
     }));
 
     const userData = ec2.UserData.forLinux();
-    userData.addCommands('touch user-data.txt');
+    const userDataScript = fs.readFileSync('./lib/user-data.txt', 'utf8');
+    userData.addCommands(userDataScript);    
     userData.addCommands(
     `# Notify CloudFormation that the instance is up and ready`,
     `yum install -y aws-cfn-bootstrap`,
@@ -274,27 +276,80 @@ var gossipKeySecretArn= process.env.CONSUL_GOSSIP_KEY_ARN || `$CONSUL_GOSSIP_KEY
 const serverProps = new ServerOutputProps(server, agentCASecretArn, gossipKeySecretArn);
 ```
 
+### Create an environment for ECS
+
+Modify EnvironmentOutputProps
+```ts
+import * as extensions from "@aws-cdk-containers/ecs-service-extensions";
+
+// add to EnvironmentOutputProps
+  ecsEnvironment: extensions.Environment;
+
+```
+
+Update environment.ts
+```ts
+import * as ecs from "@aws-cdk/aws-ecs";
+import * as extensions from "@aws-cdk-containers/ecs-service-extensions";
+
+    const ecsCluster = new ecs.Cluster(this, "ConsulMicroservicesCluster", {
+      vpc: vpc,
+    });
+
+    const ecsEnvironment = new extensions.Environment(scope, 'ConsulECSEnvironment', {
+      vpc,
+      cluster: ecsCluster,
+    });
+ 
+    this.props = {
+      envName: inputProps.envName,
+      vpc,
+      serverSecurityGroup,
+      clientSecurityGroup,
+      ecsEnvironment,
+    };
+```
+
+### Deploy the environment
+```
+cdk synth
+cdk deploy
+```
+
 ## Step 5: Build and Deploy Microservices with Consul Clients
 
 ### Create a new Microservice stack `lib/shared-props.ts`
 ```ts
 import * as cdk from '@aws-cdk/core';
-import { ServerOutputProps } from './shared-props';
+import { EnvironmentOutputProps, ServerOutputProps } from './shared-props';
 
 export class Microservices extends cdk.Stack {
-  constructor(scope: cdk.Construct, id: string, props: ServerOutputProps) {
+  constructor(scope: cdk.Construct, id: string, envProps:EnvironmentOutputProps, serverProps: ServerOutputProps) {
       super(scope, id, {});
 
       // Consul Client Configuration
+      const retryJoin = new consul_ecs.RetryJoin({ region: cdk.Stack.of(this).region, tagName: inputProps.serverTag.key, tagValue: inputProps.serverTag.tagValue});
+      const baseProps = {      
+        retryJoin,
+        consulClientSecurityGroup: envProps.clientSecurityGroup,
+        consulServerSecurityGroup: envProps.serverSecurityGroup,
+        consulCACert: serverProps.agentCASecret,
+        gossipEncryptKey: serverProps.gossipKeySecret,
+        tls: true,
+        consulDatacenter: 'dc1',
+      };
+    }
   }
-}```
+}
+```
 
 ### Modify app entry point `bin/app.ts`
 ```ts
 // Microservices with Consul Client
-const microservices = new Microservices(app, 'ConsulMicroservices', serverProps);
+const microservices = new Microservices(app, 'ConsulMicroservices', environment.props, serverProps);
 ```
 
+### Name Service
 
 ### Deploy the app
 

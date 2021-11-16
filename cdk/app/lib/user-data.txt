@@ -1,10 +1,22 @@
 #!/bin/bash -x
+
+#Utillity
+sudo yum install jq unzip wget docker -y
+sudo service docker start
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+wget https://releases.hashicorp.com/consul/1.10.4/consul_1.10.4_linux_amd64.zip
+unzip consul_1.10.4_linux_amd64.zip
+UUID=$(uuidgen)
+
 usermod -a -G docker ec2-user
 EC2_INSTANCE_IP_ADDRESS=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
 EC2_INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
 mkdir -p /opt/consul/data
 mkdir -p /opt/consul/config
 
+#Consul initial setup
 cat << EOF > /opt/consul/config/consul-server.json
 {
   "advertise_addr": "${EC2_INSTANCE_IP_ADDRESS}",
@@ -23,15 +35,6 @@ docker run -d --net=host -p 8300:8300 -p 8301:8301 -p 8301:8301/udp -p 8302:8302
   -l service_name=consul-server public.ecr.aws/hashicorp/consul:1.10.4 agent -server \
   -bootstrap-expect 1 -ui -config-file /consul/config/consul-server.json
 
-#Utillity
-sudo yum install jq unzip wget -y
-curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-unzip awscliv2.zip
-sudo ./aws/install
-wget https://releases.hashicorp.com/consul/1.10.4/consul_1.10.4_linux_amd64.zip
-unzip consul_1.10.4_linux_amd64.zip
-UUID=$(uuidgen)
-
 #Generate Consul CA
 ./consul tls ca create
 aws secretsmanager create-secret --name my_consul-agent-ca-$UUID \
@@ -46,14 +49,14 @@ sudo cp consul-agent-ca.pem /opt/consul/certs
 sudo cp dc1-server-consul-0-key.pem /opt/consul/certs
 sudo cp dc1-server-consul-0.pem /opt/consul/certs
 sudo tee /opt/consul/config/tls.json > /dev/null << EOF
-{ 
+{
     "ports": {"https": 8501},
     "verify_incoming_rpc": true,
     "verify_outgoing": true,
-    "verify_server_hostname": true, 
-    "ca_file": "/consul/certs/consul-agent-ca.pem", 
-    "cert_file": "/consul/certs/dc1-server-consul-0.pem", 
-    "key_file": "/consul/certs/dc1-server-consul-0-key.pem", 
+    "verify_server_hostname": true,
+    "ca_file": "/consul/certs/consul-agent-ca.pem",
+    "cert_file": "/consul/certs/dc1-server-consul-0.pem",
+    "key_file": "/consul/certs/dc1-server-consul-0-key.pem",
     "auto_encrypt": { "allow_tls": true }
 }
 EOF
@@ -80,7 +83,7 @@ EOF
 
 #Restart Consul
 docker stop consul-server
-docker rm consul-server 
+docker rm consul-server
 EC2_INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
 docker run -d --net=host -p 8300:8300 -p 8301:8301 -p 8301:8301/udp -p 8302:8302 \
 -p 8302:8302/udp -p 8400:8400 -p 8500:8500 -p 53:53/udp \
