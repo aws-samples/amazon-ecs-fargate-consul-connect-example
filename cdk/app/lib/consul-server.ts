@@ -28,13 +28,16 @@ export class ConsulServer extends cdk.Stack {
     const userData = ec2.UserData.forLinux();
     const userDataScript = fs.readFileSync('./lib/user-data.txt', 'utf8');
     userData.addCommands(userDataScript);    
+    const consulInstanceName = 'ConsulInstance';
     userData.addCommands(
     `# Notify CloudFormation that the instance is up and ready`,
     `yum install -y aws-cfn-bootstrap`,
-    `/opt/aws/bin/cfn-signal -e $? --stack ${cdk.Stack.of(this).stackName} --resource ConsulInstance --region ${cdk.Stack.of(this).region}`);
+    `/opt/aws/bin/cfn-signal -e $? --stack ${cdk.Stack.of(this).stackName} --resource ${consulInstanceName} --region ${cdk.Stack.of(this).region}`);
 
     const vpc = inputProps.envProps.vpc;
-    const consulServer = new ec2.Instance(this, 'ConsulServer', {
+
+    // This setup is just for a test environment
+    const consulServer = new ec2.Instance(this, consulInstanceName, {
       vpc: vpc,
       securityGroup: inputProps.envProps.serverSecurityGroup,
       instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3,ec2.InstanceSize.LARGE),
@@ -43,6 +46,8 @@ export class ConsulServer extends cdk.Stack {
       role: role,
       userData: userData,
     });
+    var cfnInstance = consulServer.node.defaultChild as ec2.CfnInstance
+    cfnInstance.overrideLogicalId(consulInstanceName);
 
     this.datacenter = 'dc1';
     
