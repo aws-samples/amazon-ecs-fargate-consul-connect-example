@@ -1,5 +1,3 @@
-#!/bin/bash -x
-
 #Utillity
 sudo yum install jq unzip wget docker -y
 sudo service docker start

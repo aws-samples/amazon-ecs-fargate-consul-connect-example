@@ -31,7 +31,10 @@ export class Microservices extends cdk.Stack {
         trafficPort: 3000,
         image: ecs.ContainerImage.fromRegistry('nathanpeck/name')
       }));
-      nameDescription.add(new consul_ecs.ECSConsulMeshExtension(baseProps));
+      nameDescription.add(new consul_ecs.ECSConsulMeshExtension({
+        ...baseProps,
+        serviceDiscoveryName: 'name',
+      }));
       nameDescription.add(new ecs_extensions.AssignPublicIpExtension());
       const name = new ecs_extensions.Service(this, 'name', {
         environment: envProps.ecsEnvironment,
@@ -46,7 +49,10 @@ export class Microservices extends cdk.Stack {
         trafficPort: 3000,
         image: ecs.ContainerImage.fromRegistry('nathanpeck/greeting')
       }));
-      greetingDescription.add(new consul_ecs.ECSConsulMeshExtension(baseProps));
+      greetingDescription.add(new consul_ecs.ECSConsulMeshExtension({
+        ...baseProps,
+        serviceDiscoveryName: 'greeting',
+      }));
       greetingDescription.add(new ecs_extensions.AssignPublicIpExtension());
       const greeting = new ecs_extensions.Service(this, 'greeting', {
         environment: envProps.ecsEnvironment,
@@ -61,7 +67,10 @@ export class Microservices extends cdk.Stack {
         trafficPort: 3000,
         image: ecs.ContainerImage.fromRegistry('nathanpeck/greeter'),
       }));
-      greeterDescription.add(new consul_ecs.ECSConsulMeshExtension(baseProps));
+      greeterDescription.add(new consul_ecs.ECSConsulMeshExtension({
+        ...baseProps,
+        serviceDiscoveryName: 'greeter',
+      }));
       greeterDescription.add(new ecs_extensions.AssignPublicIpExtension());
       greeterDescription.add(new ecs_extensions.HttpLoadBalancerExtension());
       const greeter = new ecs_extensions.Service(this, 'greeter', {
@@ -70,7 +79,7 @@ export class Microservices extends cdk.Stack {
       });
 
       // CONSUL CONNECT
-      greeter.connectTo(name, portnumber);
-      greeter.connectTo(greeting, portnumber);
+      greeter.connectTo(name, 3000);
+      greeter.connectTo(greeting, 3001);
   }
 }
