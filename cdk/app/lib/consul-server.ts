@@ -1,11 +1,13 @@
 import * as cdk from '@aws-cdk/core';
 import * as ec2 from "@aws-cdk/aws-ec2";
 import * as iam from "@aws-cdk/aws-iam";
-import { EnvironmentProps } from './shared-props';
+import { ServerInputProps } from './shared-props';
 
 export class ConsulServer extends cdk.Stack {
-  constructor(scope: cdk.Construct, id: string, props: EnvironmentProps) {
-    super(scope, id, props);
+  public readonly serverTag: {[key:string]: string};
+
+  constructor(scope: cdk.Construct, id: string, inputProps: ServerInputProps) {
+    super(scope, id, inputProps);
     
     const ami = new ec2.AmazonLinuxImage({
       generation: ec2.AmazonLinuxGeneration.AMAZON_LINUX_2,
@@ -28,14 +30,21 @@ export class ConsulServer extends cdk.Stack {
     `yum install -y aws-cfn-bootstrap`,
     `/opt/aws/bin/cfn-signal -e $? --stack ${cdk.Stack.of(this).stackName} --resource ConsulInstance --region ${cdk.Stack.of(this).region}`);
 
+    const vpc = inputProps.envProps.vpc;
     const consulServer = new ec2.Instance(this, 'ConsulServer', {
-      vpc: props.vpc,
-      securityGroup: props.serverSecurityGroup,
-      instanceType: new ec2.InstanceType('t3.large'),
+      vpc: vpc,
+      securityGroup: inputProps.envProps.serverSecurityGroup,
+      instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3,ec2.InstanceSize.LARGE),
       machineImage: ami,
-      keyName: `$MY_KEY_NAME`,
+      keyName: inputProps.keyName,
       role: role,
       userData: userData,
     });
+    
+    const tagName = 'Name'
+    const tagValue = inputProps.envProps.envName + '-consul-server';
+    cdk.Tags.of(scope).add(tagName, tagValue);
+    const serverTag = { tagName: tagValue };
+    this.serverTag = serverTag;
   }
 }
