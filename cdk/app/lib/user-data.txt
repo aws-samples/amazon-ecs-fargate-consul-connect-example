@@ -37,6 +37,7 @@ UUID=$(uuidgen)
 aws secretsmanager create-secret --name my_consul-agent-ca-$UUID \
 --description "Consul Agent CA public key" \
 --secret-string file://consul-agent-ca.pem
+--tags CONSUL_CDK_SAMPLE_SECRET_NAME=CONSUL_AGENT_CA
 
 #Generate Server certs
 ./consul tls cert create -server -dc dc1
@@ -62,6 +63,8 @@ EOF
 aws secretsmanager create-secret --name my_consul-gossip-key-$UUID \
 --description "Consul gossip key" \
 --secret-string file://consul-agent-gossip.txt
+--tags CONSUL_CDK_SAMPLE_SECRET_NAME=CONSUL_AGENT_GOSSIP_KEY
+
 EC2_INSTANCE_IP_ADDRESS=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
 GOSSIP_SECRET=$(cat consul-agent-gossip.txt)
 sudo tee /opt/consul/config/consul-server.json > /dev/null << EOF

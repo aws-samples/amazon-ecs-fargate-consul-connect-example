@@ -30,7 +30,7 @@ export class ConsulServer extends cdk.Stack {
 
     const consulServer = new ec2.Instance(this, 'ConsulServer', {
       vpc: props.vpc,
-      securityGroup: props.securityGroup,
+      securityGroup: props.serverSecurityGroup,
       instanceType: new ec2.InstanceType('t3.large'),
       machineImage: ami,
       keyName: `$MY_KEY_NAME`,
