@@ -8,241 +8,158 @@ In this example we'll configure one Consul server in VPC with TLS and gossip enc
 * We highly recommend to use an IDE that supports code-completion and syntax highlighting, i.e. VSCode, AWS Cloud9, Atom, etc.
 * AWS CDK Toolkit, you can install it via: `npm install -g aws-cdk`
 
-## Step 1 - Create the VPC and Consul server
-
-First we're going to create a VPC and Consul server. This stack will automatically configure Consul with TLS and gossip encryption. There will be two AWS Secrets Manager secrets created after successful deployment. Change the `$AWS_REGION` and `$MY_PUBLIC_IP` with your target region and your public IP accordingly. You need to have EC2 key pair in the target region, change `$MY_KEN_NAME` with your EC2 key pair name.
-
-```
-aws cloudformation deploy --template-file ./template/consul-server-tls-gossip.yaml --stack-name ConsulServer --region $AWS_REGION --capabilities CAPABILITY_IAM --parameter-overrides AllowedIP=$MY_PUBLIC_IP KeyName=$MY_KEY_NAME
-```
-Once it's deployed, take note of the following from the output:
-* VPC id of the new VPC created by the CloudFormation stack
-* Security group id of the Consul server
-* ARN of the two AWS Secrets Manager secrets for Agent CA and Gossip. Use AWS console / CLI, this output is not visible on the CloudFormation stack.
-
-You can use the string `ConsulSshTunnel` from the CloudFormation output to create SSH tunnel to the Consul server and then access it's UI from http://localhost:8500/ui/
-
-## Step 2 - Create the sample CDK application
-
-### Create project directory
-Create an empty directory on your system, initialize Typescript CDK project and install NPM packages.
+### Step 1: Create the project directory
+First create an empty directory on your system, initialize Typescript CDK project and install NPM packages.
 
 ```
-mkdir app1
-cd app1
+mkdir app && cd app
 cdk init --language typescript
+cdk bootstrap aws://{ACCOUNT}/{REGION}
+
 npm install @aws-cdk/core @aws-cdk/aws-ec2 @aws-cdk/aws-ecs @aws-cdk/aws-secretsmanager @aws-cdk-containers/ecs-service-extensions @aws-quickstart/ecs-consul-mesh-extension
 npm update
 ```
 
-### Update app entry point 
-Edit your `bin/app1.ts` file by specifying the target AWS account id and the region. Update `$AWS_ACCOUNT_ID` and `$AWS_REGION` to match your target account and region.
+## Step 2: Create and Deploy the VPC Environment 
+Next we're going to create the VPC Environment for launching the Consul server and the microservices.
+You will need to use your public IP and it's CIDR set to `$ALLOWED_IP_CIDR`.
+Example: `ALLOWED_IP_CIDR=$(curl -s ifconfig.me)/32`
 
+### Create a new file `lib/environment.ts`
+```ts
+import * as ec2 from '@aws-cdk/aws-ec2';
+import * as cdk from '@aws-cdk/core';
+
+export class Environment extends cdk.Stack {
+  constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
+    super(scope, id, props);
+    
+    const vpc = new ec2.Vpc(this, 'ConsulAppVPC', {});    
+    const securityGroup = new ec2.SecurityGroup(this, 'ConsulSecurityGroup', {
+      vpc,
+      description: 'Access to the ECS hosts that run containers',
+    });
+    securityGroup.addIngressRule(
+      ec2.Peer.ipv4($ALLOWED_IP_CIDR), 
+      ec2.Port.tcp(22), 
+      'Allow incoming connections for SSH over IPv4');
+
+  }
+}
 ```
+
+### Modify app entry point `bin/app.ts`
+```ts
 #!/usr/bin/env node
 import 'source-map-support/register';
 import * as cdk from '@aws-cdk/core';
-import { App1Stack } from '../lib/app1-stack';
-
-const env = { account: '$AWS_ACCOUNT_ID', region: '$AWS_REGION' };
+import { Environment } from '../lib/environment';
 
 const app = new cdk.App();
-new App1Stack(app, 'App1Stack', {env: env});
+const environment = new Environment(app, 'ConsulEnvironment', {});
 ```
 
-### Add extension to your stack
-Edit your stack `lib/app1-stack.ts`. First replace the `$MY_VPC_ID` and `$AWS_REGION` with the VPC id and the region from the CloudFormation stack that you deployed on step-1 earlier. Next you need to replace the `$CONSUL_SG` with the Consul server security group from step-1.
-
-
+### Deploy the environment
 ```
+// Make sure to set the variable $ALLOWED_IP_CIDR
+cdk synth
+cdk deploy
+```
+
+## Step 3: Create the Consul Server
+Next we're going to create the Consul server stack. This stack will automatically configure Consul with TLS and gossip encryption. There will be two AWS Secrets Manager secrets created after successful deployment. You need to have EC2 key pair in the target region, change `$MY_KEY_NAME` with your EC2 key pair name.
+
+### Update Environment Stack properties to be reused by other stacks
+Create a new `lib/shared-props.ts` file to share the outputs across stacks
+```ts
 import * as cdk from '@aws-cdk/core';
 import * as ec2 from '@aws-cdk/aws-ec2';
-import * as ecs from '@aws-cdk/aws-ecs';
-import * as secretsmanager from '@aws-cdk/aws-secretsmanager';
-import { AssignPublicIpExtension, Container, Environment, Service, ServiceDescription, HttpLoadBalancerExtension } from '@aws-cdk-containers/ecs-service-extensions';
-import { ECSConsulMeshExtension, RetryJoin } from '@aws-quickstart/ecs-consul-mesh-extension';
 
-export class App1Stack extends cdk.Stack {
-  constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
-    super(scope, id, props);
-
-    //change with your vpc id
-    const vpc = ec2.Vpc.fromLookup(this, 'consulVPC', { vpcId: '$MY_VPC_ID', region: '$AWS_REGION' })
-
-    const environment = new Environment(this, 'demo', {
-      vpc: vpc
-    });
-
-    //change to your security group id    
-    const consulServerSecurityGroup = ec2.SecurityGroup.fromLookup(this, 'consulServerSecurityGroup', '$CONSUL_SG')
- 
-    const consulClientSecurityGroup = new ec2.SecurityGroup(this, 'consulClientSecurityGroup', {
-      vpc: environment.vpc
-    });
-    
-    consulClientSecurityGroup.addIngressRule(
-      consulClientSecurityGroup,
-      ec2.Port.tcp(8301),
-      "allow all the clients in the mesh talk to each other"
-    );
-
-    consulClientSecurityGroup.addIngressRule(
-      consulClientSecurityGroup,
-      ec2.Port.udp(8301),
-      "allow all the clients in the mesh talk to each other"
-    );
-  }
+export interface EnvironmentProps extends cdk.StackProps {
+  vpc: ec2.Vpc,
+  securityGroup: ec2.SecurityGroup,
 }
 ```
 
-Continue to open `lib/app1-stack.ts`, configure the reference to agent CA and gossip encryption. Replace `$CONSUL_AGENT_CA` with the ARN of Secrets Manager Agent CA. Replace `$CONSUL_GOSSIP` with the ARN of Secrets Manager Agent Gossip.
+Update `lib/environment.ts`
 
+```ts
+// Add class variables
+  public readonly props: EnvironmentProps;
+
+// Set them in the constructor at the very end
+  this.props = {
+    vpc,
+    securityGroup,
+  };
 ```
-export class App1Stack extends cdk.Stack {
-  constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
-    super(scope, id, props);
 
-    // continue from previous example ...
+### Create a new file `lib/consul-server.ts`
+```ts
+import * as cdk from '@aws-cdk/core';
+import * as ec2 from "@aws-cdk/aws-ec2";
+import * as iam from "@aws-cdk/aws-iam";
+import { EnvironmentProps } from './shared-props';
+
+export class ConsulServer extends cdk.Stack {
+  constructor(scope: cdk.Construct, id: string, props: EnvironmentProps) {
+    super(scope, id, props);
     
-    // change to your secrets manager ARN
-    const agentCASecret = secretsmanager.Secret.fromSecretAttributes(this, 'ImportedSecret', {
-      secretArn: '$CONSUL_AGENT_CA'
+    const ami = new ec2.AmazonLinuxImage({
+      generation: ec2.AmazonLinuxGeneration.AMAZON_LINUX_2,
     });
- 
-    const gossipSecret = secretsmanager.Secret.fromSecretAttributes(this, 'ImportedGossipSecret', {
-      secretArn: '$CONSUL_GOSSIP',
+
+    // Role to allow Consul server to write to secrets manager
+    const role = new iam.Role(this, 'ConsulSecretManagerRole', {
+      assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
     });
-  }
-}
-```
-
-Next, declare the first service called `name`. Replace the `$AWS_REGION` with your target region. The RetryJoin uses tag Name = test-consul-server, which matches with the Consul server tags. Replace this if you are using different Consul server.
-
-```
-export class App1Stack extends cdk.Stack {
-  constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
-    super(scope, id, props);
-
-    // continue from previous example ...
-
-    // NAME service
-    const nameDescription = new ServiceDescription();
-    nameDescription.add(new Container({
-      cpu: 1024,
-      memoryMiB: 2048,
-      trafficPort: 3000,
-      image: ecs.ContainerImage.fromRegistry('nathanpeck/name')
-    }));
- 
-    nameDescription.add(new ECSConsulMeshExtension({      
-      retryJoin: new RetryJoin({ region: '$AWS_REGION', tagName: 'Name', tagValue: 'test-consul-server' }),
-      port: 3000,
-      consulClientSecurityGroup: consulClientSecurityGroup,
-      consulServerSecurityGroup: consulServerSecurityGroup,
-      consulCACert: agentCASecret,
-      gossipEncryptKey: gossipSecret,
-      tls: true,
-      serviceDiscoveryName: 'name',
-      consulDatacenter: 'dc1',
+    role.addToPolicy(new iam.PolicyStatement({
+      resources: [`arn:${cdk.Stack.of(this).partition}:secretsmanager:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:secret:*`],
+      actions: ['secretsmanager:CreateSecret'],
+      conditions: {"ForAnyValue:StringLike": {"secretsmanager:Name": ["my_consul-agent-ca*","my_consul-gossip-key*"]}},
     }));
 
-    nameDescription.add(new AssignPublicIpExtension());
-    
-    const name = new Service(this, 'name', {
-      environment: environment,
-      serviceDescription: nameDescription
+    const userData = ec2.UserData.forLinux();
+    userData.addCommands('touch user-data.txt');
+    userData.addCommands(
+    `# Notify CloudFormation that the instance is up and ready`,
+    `yum install -y aws-cfn-bootstrap`,
+    `/opt/aws/bin/cfn-signal -e $? --stack ${cdk.Stack.of(this).stackName} --resource ConsulInstance --region ${cdk.Stack.of(this).region}`);
+
+    const consulServer = new ec2.Instance(this, 'ConsulServer', {
+      vpc: props.vpc,
+      securityGroup: props.securityGroup,
+      instanceType: new ec2.InstanceType('t3.large'),
+      machineImage: ami,
+      keyName: $MY_KEY_NAME,
+      role: role,
+      userData: userData,
     });
   }
 }
 ```
 
-Continue with the `greeting` and `greeter` service. Follow similar pattern of replacing the `$AWS_REGION` and update the RetryJoin as necessary.
+### Modify app entry point `bin/app.ts`
+Add the following
 
-```
-export class App1Stack extends cdk.Stack {
-  constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
-    super(scope, id, props);
+```ts
+import { ConsulServer } from '../lib/consul-server';
 
-    // continue from previous example ...
-
-    // GREETING service
-    const greetingDescription = new ServiceDescription();
-    
-    greetingDescription.add(new Container({
-      cpu: 1024,
-      memoryMiB: 2048,
-      trafficPort: 3000,
-      image: ecs.ContainerImage.fromRegistry('nathanpeck/greeting')
-    }));
-
-    greetingDescription.add(new ECSConsulMeshExtension({
-      retryJoin: new RetryJoin({ region: '$AWS_REGION', tagName: 'Name', tagValue: 'test-consul-server' }),
-      port: 3000,
-      consulClientSecurityGroup: consulClientSecurityGroup,
-      consulServerSecurityGroup: consulServerSecurityGroup,
-      consulCACert: agentCASecret,
-      gossipEncryptKey: gossipSecret,
-      tls: true,
-      serviceDiscoveryName: 'greeting',
-      consulDatacenter: 'dc1',
-    }));
-
-    greetingDescription.add(new AssignPublicIpExtension());
-    
-    const greeting = new Service(this, 'greeting', {
-      environment: environment,
-      serviceDescription: greetingDescription,
-    });
-
-    // GREETER service
-    const greeterDescription = new ServiceDescription();
-    
-    greeterDescription.add(new Container({
-      cpu: 1024,
-      memoryMiB: 2048,
-      trafficPort: 3000,
-      image: ecs.ContainerImage.fromRegistry('nathanpeck/greeter'),
-    }));
-
-    greeterDescription.add(new ECSConsulMeshExtension({
-      retryJoin: new RetryJoin({ region: '$AWS_REGION', tagName: 'Name', tagValue: 'test-consul-server' }),
-      port: 3000,
-      consulClientSecurityGroup: consulClientSecurityGroup,
-      consulServerSecurityGroup: consulServerSecurityGroup,
-      consulCACert: agentCASecret,
-      gossipEncryptKey: gossipSecret,
-      tls: true,
-      serviceDiscoveryName: 'greeter',
-      consulDatacenter: 'dc1',
-    }));
-
-    greeterDescription.add(new AssignPublicIpExtension());
-    greeterDescription.add(new HttpLoadBalancerExtension());
-    
-    const greeter = new Service(this, 'greeter', {
-      environment: environment,
-      serviceDescription: greeterDescription,
-    });
-  }
-}
+const server = new ConsulServer(app, 'ConsulServer', environment.props);
 ```
 
-As final touch, connect `greeter` to `greeting` and `name` service 
-
+### Deploy the environment
 ```
-export class App1Stack extends cdk.Stack {
-  constructor(scope: cdk.Construct, id: string, props?: cdk.StackProps) {
-    super(scope, id, props);
-
-    // continue from previous example ...
-
-    greeter.connectTo(name);
-    greeter.connectTo(greeting);
-  }
-}
+// Make sure to set the variable $MY_KEY_NAME
+cdk synth
+cdk deploy --all
 ```
 
-### Depoy the app
+## Step 4: Create the sample CDK application
+
+TBD
+
+### Deploy the app
 
 From your terminal, run:
 
@@ -256,18 +173,12 @@ Get the ELB URL from the output and hit it on your browser to check the result
 
 ![Browser output showing the random greeting and name output](imgs/elb-output.png)
 
-## Step 3 - Clean up
+## Step 5 - Clean up
 
-From your terminal, destroy the stack:
-
-```
-cdk destroy
-```
-
-Once the App stack is destroyed, continue with deleting the CloudFormation stack.
+From your terminal, destroy all stacks
 
 ```
-aws cloudformation delete-stack --stack-name ConsulServer --region $AWS_REGION 
+cdk destroy --all
 ```
 
 ## Reference
