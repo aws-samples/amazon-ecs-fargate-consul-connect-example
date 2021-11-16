@@ -3,19 +3,27 @@ import 'source-map-support/register';
 import * as cdk from '@aws-cdk/core';
 import { Environment } from '../lib/environment';
 import { ConsulServer } from '../lib/consul-server';
-import { ServerProps } from '../lib/shared-props';
+import { ServerOutputProps } from '../lib/shared-props';
 import { Microservices } from '../lib/microservices';
 
 const app = new cdk.App();
 
 // Environment
-const environment = new Environment(app, 'ConsulEnvironment', {});
+var allowedIPCidr = process.env.ALLOWED_IP_CIDR || `$ALLOWED_IP_CIDR`;
+const environment = new Environment(app, 'ConsulEnvironment', {
+    envName: 'test',
+    allowedIpCidr: allowedIPCidr,
+});
 
 // Consul Server
-const server = new ConsulServer(app, 'ConsulServer', environment.props);
-const agentCASecretArn = `$CONSUL_AGENT_CA_ARN`;
-const gossipKeySecretArn = `$CONSUL_GOSSIP_KEY_ARN`;
-const serverProps = new ServerProps(server, agentCASecretArn, gossipKeySecretArn);
+var keyName = process.env.MY_KEY_NAME || `$MY_KEY_NAME`;
+const server = new ConsulServer(app, 'ConsulServer', {
+    envProps: environment.props,
+    keyName,
+});
+var agentCASecretArn = process.env.CONSUL_AGENT_CA_ARN || `$CONSUL_AGENT_CA_ARN`;
+var gossipKeySecretArn= process.env.CONSUL_GOSSIP_KEY_ARN || `$CONSUL_GOSSIP_KEY_ARN`;
+const serverProps = new ServerOutputProps(server, agentCASecretArn, gossipKeySecretArn);
 
 // Microservices with Consul Client
-const microservices = new Microservices(app, 'ConsulMicroservices', serverProps)
+const microservices = new Microservices(app, 'ConsulMicroservices', serverProps);
