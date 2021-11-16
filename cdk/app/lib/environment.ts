@@ -1,5 +1,7 @@
 import * as cdk from '@aws-cdk/core';
 import * as ec2 from "@aws-cdk/aws-ec2";
+import * as ecs from "@aws-cdk/aws-ecs";
+import * as extensions from "@aws-cdk-containers/ecs-service-extensions";
 import { EnvironmentInputProps, EnvironmentOutputProps } from './shared-props';
 
 export class Environment extends cdk.Stack {
@@ -34,7 +36,7 @@ export class Environment extends cdk.Stack {
     clientSecurityGroup.addIngressRule(
       clientSecurityGroup,
       ec2.Port.tcp(8301),
-      'allow all the clients in the mesh talk to each other'
+      'allow all the clients in the mesh talk to each other' 
     );
     clientSecurityGroup.addIngressRule(
       clientSecurityGroup,
@@ -42,11 +44,21 @@ export class Environment extends cdk.Stack {
       'allow all the clients in the mesh talk to each other'
     );
 
+    const ecsCluster = new ecs.Cluster(this, "ConsulMicroservicesCluster", {
+      vpc: vpc,
+    });
+
+    const ecsEnvironment = new extensions.Environment(this, 'ConsulECSEnvironment', {
+      vpc,
+      cluster: ecsCluster,
+    });
+ 
     this.props = {
       envName: inputProps.envName,
       vpc,
       serverSecurityGroup,
-      clientSecurityGroup
+      clientSecurityGroup,
+      ecsEnvironment,
     };
   }
 }
