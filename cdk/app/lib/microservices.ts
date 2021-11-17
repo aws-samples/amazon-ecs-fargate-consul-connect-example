@@ -1,4 +1,6 @@
+import * as path from 'path';
 import * as cdk from '@aws-cdk/core';
+import * as ec2 from '@aws-cdk/aws-ec2';
 import * as ecs from '@aws-cdk/aws-ecs';
 import * as consul_ecs from '@aws-quickstart/ecs-consul-mesh-extension';
 import * as ecs_extensions from "@aws-cdk-containers/ecs-service-extensions";
@@ -29,7 +31,7 @@ export class Microservices extends cdk.Stack {
         cpu: 1024,
         memoryMiB: 2048,
         trafficPort: 3000,
-        image: ecs.ContainerImage.fromRegistry('nathanpeck/name')
+        image: ecs.ContainerImage.fromAsset(path.resolve(__dirname, '../../../services/name/src/'), {file: 'Dockerfile'}),
       }));
       nameDescription.add(new consul_ecs.ECSConsulMeshExtension({
         ...baseProps,
@@ -40,14 +42,14 @@ export class Microservices extends cdk.Stack {
         environment: envProps.ecsEnvironment,
         serviceDescription: nameDescription
       });
-
+  
       // GREETING service
       const greetingDescription = new ecs_extensions.ServiceDescription();
       greetingDescription.add(new ecs_extensions.Container({
         cpu: 1024,
         memoryMiB: 2048,
         trafficPort: 3000,
-        image: ecs.ContainerImage.fromRegistry('nathanpeck/greeting')
+        image: ecs.ContainerImage.fromAsset(path.resolve(__dirname, '../../../services/greeting/src/'), {file: 'Dockerfile'}),
       }));
       greetingDescription.add(new consul_ecs.ECSConsulMeshExtension({
         ...baseProps,
@@ -65,7 +67,7 @@ export class Microservices extends cdk.Stack {
         cpu: 1024,
         memoryMiB: 2048,
         trafficPort: 3000,
-        image: ecs.ContainerImage.fromRegistry('nathanpeck/greeter'),
+        image: ecs.ContainerImage.fromAsset(path.resolve(__dirname, '../../../services/greeter/src/'), {file: 'Dockerfile'}),
       }));
       greeterDescription.add(new consul_ecs.ECSConsulMeshExtension({
         ...baseProps,
@@ -79,7 +81,7 @@ export class Microservices extends cdk.Stack {
       });
 
       // CONSUL CONNECT
-      greeter.connectTo(name, 3000);
-      greeter.connectTo(greeting, 3001);
+      greeter.connectTo(name, { local_bind_port: 3000 });
+      greeter.connectTo(greeting, { local_bind_port: 3001 });
   }
 }

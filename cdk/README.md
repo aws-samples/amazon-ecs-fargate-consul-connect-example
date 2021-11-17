@@ -49,16 +49,11 @@ export class Environment extends cdk.Stack {
     super(scope, id, inputProps);
     
     const vpc = new ec2.Vpc(this, 'ConsulVPC', {
-      subnetConfiguration: [
-        {
-          name: 'PublicSubnetOne',
-          subnetType: ec2.SubnetType.PUBLIC,
-        },
-        {
-          name: 'PublicSubnetTwo',
+      subnetConfiguration: [{
+          name: 'PublicSubnet',
           subnetType: ec2.SubnetType.PUBLIC,
         }]    
-    });    
+    });  
     const serverSecurityGroup = new ec2.SecurityGroup(this, 'ConsulServerSecurityGroup', {
       vpc,
       description: 'Access to the ECS hosts that run containers',
