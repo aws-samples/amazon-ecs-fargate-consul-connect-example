@@ -26,7 +26,7 @@
     "@aws-cdk/aws-ecs": "^1.132.0",
     "@aws-cdk/aws-secretsmanager": "^1.132.0",
     "@aws-cdk/core": "1.132.0",
-    "@aws-quickstart/ecs-consul-mesh-extension": "^0.2.13",
+    "@aws-quickstart/ecs-consul-mesh-extension": "^0.2.14",
     "source-map-support": "^0.5.16"
   }
 }

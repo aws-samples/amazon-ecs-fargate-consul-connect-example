@@ -7,8 +7,13 @@ import * as ecs_extensions from "@aws-cdk-containers/ecs-service-extensions";
 import { EnvironmentOutputProps, ServerOutputProps } from './shared-props';
 
 export class Microservices extends cdk.Stack {
-  constructor(scope: cdk.Construct, id: string, envProps:EnvironmentOutputProps, serverProps: ServerOutputProps) {
-      super(scope, id, {});
+  constructor(scope: cdk.Construct, id: string, 
+    envProps:EnvironmentOutputProps, serverProps: ServerOutputProps, props?: cdk.StackProps) {
+      super(scope, id, props);
+
+      //change to your security group id    
+      const consulServerSecurityGroup = ec2.SecurityGroup.fromSecurityGroupId(this, 'ImportedServerSG', '$CONSUL_SERVER_SG');
+      const consulClientSecurityGroup = ec2.SecurityGroup.fromSecurityGroupId(this, 'ImportedClientSG', '$CONSUL_CLIENT_SG');
 
       // Consul Client Base Configuration
       const retryJoin = new consul_ecs.RetryJoin({ 
@@ -17,8 +22,8 @@ export class Microservices extends cdk.Stack {
         tagValue: serverProps.serverTag.tagValue});
       const baseProps = {      
         retryJoin,
-        consulClientSecurityGroup: envProps.clientSecurityGroup,
-        consulServerSecurityGroup: envProps.serverSecurityGroup,
+        consulClientSecurityGroup: consulClientSecurityGroup,
+        consulServerSecurityGroup: consulServerSecurityGroup,
         consulCACert: serverProps.agentCASecret,
         gossipEncryptKey: serverProps.gossipKeySecret,
         tls: true,
