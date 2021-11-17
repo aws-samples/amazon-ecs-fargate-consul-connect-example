@@ -54,7 +54,7 @@ export class ConsulServer extends cdk.Stack {
     const tagName = 'Name'
     const tagValue = inputProps.envProps.envName + '-consul-server';
     cdk.Tags.of(scope).add(tagName, tagValue);
-    const serverTag = { tagName: tagValue };
+    const serverTag = { [tagName]: tagValue };
     this.serverTag = serverTag;
 
     new cdk.CfnOutput(this, 'ConsulSshTunnel', {
