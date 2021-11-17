@@ -18,8 +18,8 @@ export class Microservices extends cdk.Stack {
       // Consul Client Base Configuration
       const retryJoin = new consul_ecs.RetryJoin({ 
         region: cdk.Stack.of(this).region, 
-        tagName: serverProps.serverTag.key, 
-        tagValue: serverProps.serverTag.tagValue});
+        tagName: Object.keys(serverProps.serverTag)[0], 
+        tagValue: Object.values(serverProps.serverTag)[0]});
       const baseProps = {      
         retryJoin,
         consulClientSecurityGroup: consulClientSecurityGroup,
