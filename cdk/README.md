@@ -43,8 +43,6 @@ import * as ec2 from "@aws-cdk/aws-ec2";
 import { EnvironmentInputProps } from './shared-props';
 
 export class Environment extends cdk.Stack {
-  public readonly props: EnvironmentOutputProps;
-
   constructor(scope: cdk.Construct, id: string, inputProps: EnvironmentInputProps) {
     super(scope, id, inputProps);
     
