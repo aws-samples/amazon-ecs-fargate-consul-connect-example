@@ -132,16 +132,6 @@ export class Environment extends cdk.Stack {
       clientSecurityGroup,
       ecsEnvironment,
     };
-
-    new cdk.CfnOutput(this, 'ConsulServerSG', {
-      value: serverSecurityGroup.securityGroupId,
-      description: "Security group attached to Consul Server",
-    });
-
-    new cdk.CfnOutput(this, 'ConsulClientSG', {
-      value: clientSecurityGroup.securityGroupId,
-      description: "Security group for Consul clients",
-    });
   }
 }
 ```
@@ -168,15 +158,15 @@ const environment = new Environment(app, 'ConsulEnvironment', {
 
 ### Deploy the environment
 
-Remember to add your public IP and it's CIDR set to `$ALLOWED_IP_CIDR`. Example: `export ALLOWED_IP_CIDR=$(curl -s ifconfig.me)/32`
+Remember to add your public IP and it's CIDR set to `$ALLOWED_IP_CIDR`.
 
 ```
 // Make sure to set the environment variable $ALLOWED_IP_CIDR
+export ALLOWED_IP_CIDR=$(curl -s ifconfig.me)/32
 cdk synth
 cdk deploy
 ```
 
-Take notes of the CDK output for `ConsulServerSG` and `ConsulClientSG`. We will use it on the next step.
 
 ## Step 4: Create the Consul Server
 Next we're going to create the Consul server stack. This stack will automatically configure Consul with TLS and gossip encryption. There will be two AWS Secrets Manager secrets created after successful deployment. 
@@ -375,10 +365,11 @@ const server = new ConsulServer(app, 'ConsulServer', {
 
 ### Deploy the server
 
-To launch the Consul server, you need to specify the EC2 key-pair. Set environment variable `$MY_KEY_NAME` with your existing EC2 key-pair name. For example: `export MY_KEY_NAME=my-ec2-key-pair`
+To launch the Consul server, you need to specify the EC2 key-pair. Set environment variable `$MY_KEY_NAME` with your existing EC2 key-pair name. 
 
 ```
-// Make sure to set the variable $MY_KEY_NAME
+// Make sure to set the variable $MY_KEY_NAME accordingly
+export MY_KEY_NAME=<CHANGE WITH YOUR EC2 KEY PAIR>
 cdk synth
 cdk deploy --all
 ```
@@ -416,7 +407,7 @@ const serverProps = new ServerOutputProps(server, agentCASecretArn, gossipKeySec
 
 ### Create a new Microservice stack
 
-Create a new file `lib/microservices.ts` with the following content. Replace `$CONSUL_SERVER_SG` and `$CONSUL_CLIENT_SG` with the CDK output from step 4.
+Create a new file `lib/microservices.ts` with the following content. 
 
 ```ts
 import * as path from 'path';
@@ -524,8 +515,11 @@ export class Microservices extends cdk.Stack {
 
 ### Modify app entry point `bin/app.ts`
 ```ts
+import { Microservices } from '../lib/microservices';
+
 // Microservices with Consul Client
 const microservices = new Microservices(app, 'ConsulMicroservices', environment.props, serverProps);
+
 ```
 
 ### Deploy the app
@@ -545,12 +539,14 @@ Get the ELB URL from the output and hit it on your browser to check the result
 You can use the string ConsulSshTunnel from the ConsulServer output to create SSH tunnel to the Consul server and then access it's UI from http://localhost:8500/ui/
 
 
-## Step 6: Clean up
+## Step 7: Clean up
 
 From your terminal, destroy all stacks
 
 ```
 cdk destroy --all
+aws secretsmanager delete-secret --secret-id $CONSUL_AGENT_CA_ARN
+aws secretsmanager delete-secret --secret-id $CONSUL_GOSSIP_KEY_ARN
 ```
 
 ## Reference
