@@ -9,29 +9,29 @@ export class Environment extends cdk.Stack {
 
   constructor(scope: cdk.Construct, id: string, inputProps: EnvironmentInputProps) {
     super(scope, id, inputProps);
-    
+
     const vpc = new ec2.Vpc(this, 'ConsulVPC', {
       subnetConfiguration: [{
           name: 'PublicSubnet',
           subnetType: ec2.SubnetType.PUBLIC,
-        }]    
-    });    
+        }]
+    });
     const serverSecurityGroup = new ec2.SecurityGroup(this, 'ConsulServerSecurityGroup', {
       vpc,
       description: 'Access to the ECS hosts that run containers',
     });
     serverSecurityGroup.addIngressRule(
-      ec2.Peer.ipv4(inputProps.allowedIpCidr), 
-      ec2.Port.tcp(22), 
+      ec2.Peer.ipv4(inputProps.allowedIpCidr),
+      ec2.Port.tcp(22),
       'Allow incoming connections for SSH over IPv4');
-    
+
     const clientSecurityGroup = new ec2.SecurityGroup(this, 'ConsulClientSecurityGroup', {
       vpc,
     });
     clientSecurityGroup.addIngressRule(
       clientSecurityGroup,
       ec2.Port.tcp(8301),
-      'allow all the clients in the mesh talk to each other' 
+      'allow all the clients in the mesh talk to each other'
     );
     clientSecurityGroup.addIngressRule(
       clientSecurityGroup,
@@ -43,11 +43,11 @@ export class Environment extends cdk.Stack {
       vpc: vpc,
     });
 
-    const ecsEnvironment = new extensions.Environment(this, 'ConsulECSEnvironment', {
+    const ecsEnvironment = new extensions.Environment(scope, 'ConsulECSEnvironment', {
       vpc,
       cluster: ecsCluster,
     });
- 
+
     this.props = {
       envName: inputProps.envName,
       vpc,

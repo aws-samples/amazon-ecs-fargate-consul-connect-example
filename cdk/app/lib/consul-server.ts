@@ -10,7 +10,7 @@ export class ConsulServer extends cdk.Stack {
 
   constructor(scope: cdk.Construct, id: string, inputProps: ServerInputProps) {
     super(scope, id, inputProps);
-    
+
     const ami = new ec2.AmazonLinuxImage({
       generation: ec2.AmazonLinuxGeneration.AMAZON_LINUX_2,
     });
@@ -27,7 +27,7 @@ export class ConsulServer extends cdk.Stack {
 
     const userData = ec2.UserData.forLinux();
     const userDataScript = fs.readFileSync('./lib/user-data.txt', 'utf8');
-    userData.addCommands(userDataScript);    
+    userData.addCommands(userDataScript);
     const consulInstanceName = 'ConsulInstance';
     userData.addCommands(
     `# Notify CloudFormation that the instance is up and ready`,
@@ -50,10 +50,11 @@ export class ConsulServer extends cdk.Stack {
     cfnInstance.overrideLogicalId(consulInstanceName);
 
     this.datacenter = 'dc1';
-    
+
     const tagName = 'Name'
     const tagValue = inputProps.envProps.envName + '-consul-server';
     cdk.Tags.of(scope).add(tagName, tagValue);
+    cdk.Tags.of(consulServer).add(tagName, tagValue);
     const serverTag = { [tagName]: tagValue };
     this.serverTag = serverTag;
 

@@ -7,20 +7,20 @@ import * as ecs_extensions from "@aws-cdk-containers/ecs-service-extensions";
 import { EnvironmentOutputProps, ServerOutputProps } from './shared-props';
 
 export class Microservices extends cdk.Stack {
-  constructor(scope: cdk.Construct, id: string, 
+  constructor(scope: cdk.Construct, id: string,
     envProps:EnvironmentOutputProps, serverProps: ServerOutputProps, props?: cdk.StackProps) {
       super(scope, id, props);
 
-      //change to your security group id    
-      const consulServerSecurityGroup = ec2.SecurityGroup.fromSecurityGroupId(this, 'ImportedServerSG', '$CONSUL_SERVER_SG');
-      const consulClientSecurityGroup = ec2.SecurityGroup.fromSecurityGroupId(this, 'ImportedClientSG', '$CONSUL_CLIENT_SG');
+      //change to your security group id
+      const consulServerSecurityGroup = ec2.SecurityGroup.fromSecurityGroupId(this, 'ImportedServerSG', envProps.serverSecurityGroup.securityGroupId);
+      const consulClientSecurityGroup = ec2.SecurityGroup.fromSecurityGroupId(this, 'ImportedClientSG', envProps.clientSecurityGroup.securityGroupId);
 
       // Consul Client Base Configuration
-      const retryJoin = new consul_ecs.RetryJoin({ 
-        region: cdk.Stack.of(this).region, 
-        tagName: Object.keys(serverProps.serverTag)[0], 
+      const retryJoin = new consul_ecs.RetryJoin({
+        region: cdk.Stack.of(this).region,
+        tagName: Object.keys(serverProps.serverTag)[0],
         tagValue: Object.values(serverProps.serverTag)[0]});
-      const baseProps = {      
+      const baseProps = {
         retryJoin,
         consulClientSecurityGroup: consulClientSecurityGroup,
         consulServerSecurityGroup: consulServerSecurityGroup,
@@ -33,13 +33,14 @@ export class Microservices extends cdk.Stack {
       // NAME service
       const nameDescription = new ecs_extensions.ServiceDescription();
       nameDescription.add(new ecs_extensions.Container({
-        cpu: 1024,
-        memoryMiB: 2048,
+        cpu: 512,
+        memoryMiB: 1024,
         trafficPort: 3000,
-        image: ecs.ContainerImage.fromAsset(path.resolve(__dirname, '../../../services/name/src/'), {file: 'Dockerfile'}),
+        image: ecs.ContainerImage.fromRegistry('nathanpeck/name')
       }));
       nameDescription.add(new consul_ecs.ECSConsulMeshExtension({
         ...baseProps,
+        port: 3000,
         serviceDiscoveryName: 'name',
       }));
       nameDescription.add(new ecs_extensions.AssignPublicIpExtension());
@@ -47,17 +48,18 @@ export class Microservices extends cdk.Stack {
         environment: envProps.ecsEnvironment,
         serviceDescription: nameDescription
       });
-  
+
       // GREETING service
       const greetingDescription = new ecs_extensions.ServiceDescription();
       greetingDescription.add(new ecs_extensions.Container({
-        cpu: 1024,
-        memoryMiB: 2048,
+        cpu: 512,
+        memoryMiB: 1024,
         trafficPort: 3000,
-        image: ecs.ContainerImage.fromAsset(path.resolve(__dirname, '../../../services/greeting/src/'), {file: 'Dockerfile'}),
+        image: ecs.ContainerImage.fromRegistry('nathanpeck/greeting')
       }));
       greetingDescription.add(new consul_ecs.ECSConsulMeshExtension({
         ...baseProps,
+        port: 3000,
         serviceDiscoveryName: 'greeting',
       }));
       greetingDescription.add(new ecs_extensions.AssignPublicIpExtension());
@@ -69,13 +71,14 @@ export class Microservices extends cdk.Stack {
       // GREETER service
       const greeterDescription = new ecs_extensions.ServiceDescription();
       greeterDescription.add(new ecs_extensions.Container({
-        cpu: 1024,
-        memoryMiB: 2048,
+        cpu: 512,
+        memoryMiB: 1024,
         trafficPort: 3000,
-        image: ecs.ContainerImage.fromAsset(path.resolve(__dirname, '../../../services/greeter/src/'), {file: 'Dockerfile'}),
+        image: ecs.ContainerImage.fromRegistry('nathanpeck/greeter')
       }));
       greeterDescription.add(new consul_ecs.ECSConsulMeshExtension({
         ...baseProps,
+        port: 3000,
         serviceDiscoveryName: 'greeter',
       }));
       greeterDescription.add(new ecs_extensions.AssignPublicIpExtension());
@@ -88,5 +91,10 @@ export class Microservices extends cdk.Stack {
       // CONSUL CONNECT
       greeter.connectTo(name, { local_bind_port: 3000 });
       greeter.connectTo(greeting, { local_bind_port: 3001 });
+
+      new cdk.CfnOutput(this, 'ConsulClientSG', {
+        value: envProps.clientSecurityGroup.securityGroupId,
+        description: "Consul Client SG",
+    });
   }
 }
