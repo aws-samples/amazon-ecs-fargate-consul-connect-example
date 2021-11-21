@@ -16,10 +16,12 @@ export class Environment extends cdk.Stack {
           subnetType: ec2.SubnetType.PUBLIC,
         }]
     });
+
     const serverSecurityGroup = new ec2.SecurityGroup(this, 'ConsulServerSecurityGroup', {
       vpc,
       description: 'Access to the ECS hosts that run containers',
     });
+
     serverSecurityGroup.addIngressRule(
       ec2.Peer.ipv4(inputProps.allowedIpCidr),
       ec2.Port.tcp(22),
@@ -28,11 +30,13 @@ export class Environment extends cdk.Stack {
     const clientSecurityGroup = new ec2.SecurityGroup(this, 'ConsulClientSecurityGroup', {
       vpc,
     });
+
     clientSecurityGroup.addIngressRule(
       clientSecurityGroup,
       ec2.Port.tcp(8301),
       'allow all the clients in the mesh talk to each other'
     );
+    
     clientSecurityGroup.addIngressRule(
       clientSecurityGroup,
       ec2.Port.udp(8301),

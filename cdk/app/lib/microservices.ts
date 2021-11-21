@@ -11,7 +11,6 @@ export class Microservices extends cdk.Stack {
     envProps:EnvironmentOutputProps, serverProps: ServerOutputProps, props?: cdk.StackProps) {
       super(scope, id, props);
 
-      //change to your security group id
       const consulServerSecurityGroup = ec2.SecurityGroup.fromSecurityGroupId(this, 'ImportedServerSG', envProps.serverSecurityGroup.securityGroupId);
       const consulClientSecurityGroup = ec2.SecurityGroup.fromSecurityGroupId(this, 'ImportedClientSG', envProps.clientSecurityGroup.securityGroupId);
 
@@ -36,11 +35,10 @@ export class Microservices extends cdk.Stack {
         cpu: 512,
         memoryMiB: 1024,
         trafficPort: 3000,
-        image: ecs.ContainerImage.fromRegistry('nathanpeck/name')
+        image: ecs.ContainerImage.fromAsset(path.resolve(__dirname, '../../../services/name/src/'), {file: 'Dockerfile'}),
       }));
       nameDescription.add(new consul_ecs.ECSConsulMeshExtension({
         ...baseProps,
-        port: 3000,
         serviceDiscoveryName: 'name',
       }));
       nameDescription.add(new ecs_extensions.AssignPublicIpExtension());
@@ -55,11 +53,10 @@ export class Microservices extends cdk.Stack {
         cpu: 512,
         memoryMiB: 1024,
         trafficPort: 3000,
-        image: ecs.ContainerImage.fromRegistry('nathanpeck/greeting')
+        image: ecs.ContainerImage.fromAsset(path.resolve(__dirname, '../../../services/greeting/src/'), {file: 'Dockerfile'}),
       }));
       greetingDescription.add(new consul_ecs.ECSConsulMeshExtension({
         ...baseProps,
-        port: 3000,
         serviceDiscoveryName: 'greeting',
       }));
       greetingDescription.add(new ecs_extensions.AssignPublicIpExtension());
@@ -74,11 +71,10 @@ export class Microservices extends cdk.Stack {
         cpu: 512,
         memoryMiB: 1024,
         trafficPort: 3000,
-        image: ecs.ContainerImage.fromRegistry('nathanpeck/greeter')
+        image: ecs.ContainerImage.fromAsset(path.resolve(__dirname, '../../../services/greeter/src/'), {file: 'Dockerfile'}),
       }));
       greeterDescription.add(new consul_ecs.ECSConsulMeshExtension({
         ...baseProps,
-        port: 3000,
         serviceDiscoveryName: 'greeter',
       }));
       greeterDescription.add(new ecs_extensions.AssignPublicIpExtension());
@@ -95,6 +91,6 @@ export class Microservices extends cdk.Stack {
       new cdk.CfnOutput(this, 'ConsulClientSG', {
         value: envProps.clientSecurityGroup.securityGroupId,
         description: "Consul Client SG",
-    });
+      });
   }
 }

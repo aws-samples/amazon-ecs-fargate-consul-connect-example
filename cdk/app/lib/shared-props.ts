@@ -1,8 +1,7 @@
 import * as cdk from '@aws-cdk/core';
 import * as ec2 from '@aws-cdk/aws-ec2';
-import * as secretsmanager from '@aws-cdk/aws-secretsmanager';
 import * as extensions from "@aws-cdk-containers/ecs-service-extensions";
-import { ConsulServer } from './consul-server';
+import * as secretsmanager from '@aws-cdk/aws-secretsmanager';
 
 export interface EnvironmentInputProps extends cdk.StackProps {
   envName: string;
@@ -22,20 +21,9 @@ export interface ServerInputProps extends cdk.StackProps {
   keyName: string,
 }
 
-export class ServerOutputProps {
+export interface ServerOutputProps extends cdk.StackProps {
   serverTag: {[key: string]: string};
   serverDataCenter: string;
   agentCASecret: secretsmanager.ISecret;
   gossipKeySecret: secretsmanager.ISecret;
-
-  constructor(serverScope: ConsulServer, agentCASecretArn: string, gossipKeySecretArn: string) {
-    this.serverTag = serverScope.serverTag;
-    this.serverDataCenter = serverScope.datacenter;
-    this.agentCASecret = secretsmanager.Secret.fromSecretAttributes(serverScope, 'ImportedConsulAgentCA', {
-      secretArn: agentCASecretArn
-    });
-    this.gossipKeySecret = secretsmanager.Secret.fromSecretAttributes(serverScope, 'ImportedConsulGossipKey', {
-      secretArn: gossipKeySecretArn
-    });
-  }
 }
