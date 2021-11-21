@@ -9,7 +9,7 @@ In this example we'll configure one Consul server in VPC with TLS and gossip enc
 * AWS CDK Toolkit, you can install it via: `npm install -g aws-cdk`
 
 ## Step 1: Create the project directory
-First create an empty directory on your system, initialize Typescript CDK project and install NPM packages. Replace $ACCOUNT and $REGION with your target AWS account id and region accordingly.
+First create an empty directory on your system, initialize Typescript CDK project and install NPM packages. Replace `$ACCOUNT` and `$REGION` with your target AWS account id and region accordingly.
 
 ```
 mkdir app && cd app
@@ -22,14 +22,15 @@ npm update
 
 ## Step 2: Define shared properties
 
-We are going to create and deploy the three separate stack for environment (VPC and ECS cluster), Consul server and microservices application stack. Create a new `lib/shared-props.ts` file with the following content. We are using this as shared properties between the stacks.
+We are going to create and deploy the three separate stack for environment (VPC and ECS cluster), Consul server and microservices application stack.
+
+First we need to declare shared properties between the stacks. Create a new `lib/shared-props.ts` file with the following content.
 
 ```ts
 import * as cdk from '@aws-cdk/core';
 import * as ec2 from '@aws-cdk/aws-ec2';
 import * as extensions from "@aws-cdk-containers/ecs-service-extensions";
 import * as secretsmanager from '@aws-cdk/aws-secretsmanager';
-import { ConsulServer } from '../lib/consul-server'
 
 export interface EnvironmentInputProps extends cdk.StackProps {
   envName: string;
@@ -49,30 +50,17 @@ export interface ServerInputProps extends cdk.StackProps {
   keyName: string,
 }
 
-export class ServerOutputProps {
+export interface ServerOutputProps extends cdk.StackProps {
   serverTag: {[key: string]: string};
   serverDataCenter: string;
   agentCASecret: secretsmanager.ISecret;
   gossipKeySecret: secretsmanager.ISecret;
-
-  constructor(serverScope: ConsulServer, agentCASecretArn: string, gossipKeySecretArn: string) {
-    this.serverTag = serverScope.serverTag;
-    this.serverDataCenter = serverScope.datacenter;
-    this.agentCASecret = secretsmanager.Secret.fromSecretAttributes(serverScope, 'ImportedConsulAgentCA', {
-      secretArn: agentCASecretArn
-    });
-    this.gossipKeySecret = secretsmanager.Secret.fromSecretAttributes(serverScope, 'ImportedConsulGossipKey', {
-      secretArn: gossipKeySecretArn
-    });
-  }
 }
 ```
 
-## Step 3: Create and deploy the environment
+## Step 3: Create the environment
 
-### Create the environment
-
-Now we going to build a new VPC, launch ECS cluster and create dedicated security group for Consul server and client. Create a new file `lib/environment.ts` with the following content. 
+Now we are going to build a new VPC, launch ECS cluster and create dedicated security group for Consul server and client. Create a new file `lib/environment.ts` with the following content. 
 
 ```ts
 import * as cdk from '@aws-cdk/core';
@@ -93,10 +81,12 @@ export class Environment extends cdk.Stack {
           subnetType: ec2.SubnetType.PUBLIC,
         }]
     });
+
     const serverSecurityGroup = new ec2.SecurityGroup(this, 'ConsulServerSecurityGroup', {
       vpc,
       description: 'Access to the ECS hosts that run containers',
     });
+
     serverSecurityGroup.addIngressRule(
       ec2.Peer.ipv4(inputProps.allowedIpCidr),
       ec2.Port.tcp(22),
@@ -105,11 +95,13 @@ export class Environment extends cdk.Stack {
     const clientSecurityGroup = new ec2.SecurityGroup(this, 'ConsulClientSecurityGroup', {
       vpc,
     });
+
     clientSecurityGroup.addIngressRule(
       clientSecurityGroup,
       ec2.Port.tcp(8301),
       'allow all the clients in the mesh talk to each other'
     );
+    
     clientSecurityGroup.addIngressRule(
       clientSecurityGroup,
       ec2.Port.udp(8301),
@@ -136,38 +128,6 @@ export class Environment extends cdk.Stack {
 }
 ```
 
-### Modify app entry point 
-
-Modify the app entry point to launch the environment stack. Open `bin/app.ts` file and replace it with the following content. You will need to use your public IP and it's CIDR set to `$ALLOWED_IP_CIDR`. Example: `export ALLOWED_IP_CIDR=$(curl -s ifconfig.me)/32`
-
-```ts
-#!/usr/bin/env node
-import 'source-map-support/register';
-import * as cdk from '@aws-cdk/core';
-import { Environment } from '../lib/environment';
-
-const app = new cdk.App();
-
-// Environment
-var allowedIPCidr = process.env.ALLOWED_IP_CIDR || `$ALLOWED_IP_CIDR`;
-const environment = new Environment(app, 'ConsulEnvironment', {
-    envName: 'test',
-    allowedIpCidr: allowedIPCidr,
-});
-```
-
-### Deploy the environment
-
-Remember to add your public IP and it's CIDR set to `$ALLOWED_IP_CIDR`.
-
-```
-// Make sure to set the environment variable $ALLOWED_IP_CIDR
-export ALLOWED_IP_CIDR=$(curl -s ifconfig.me)/32
-cdk synth
-cdk deploy
-```
-
-
 ## Step 4: Create the Consul Server
 Next we're going to create the Consul server stack. This stack will automatically configure Consul with TLS and gossip encryption. There will be two AWS Secrets Manager secrets created after successful deployment. 
 
@@ -175,20 +135,21 @@ Next we're going to create the Consul server stack. This stack will automaticall
 
 To automatically configure Consul server with TLS and gossip encryption, we going to bootstrap it during launch. Create file `lib/user-data.txt` with the following content.
 
-```
+```bash
 #Utillity
 sudo yum install jq unzip wget docker -y
+usermod -a -G docker ec2-user
 sudo service docker start
 curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
 unzip awscliv2.zip
 sudo ./aws/install
 wget https://releases.hashicorp.com/consul/1.10.4/consul_1.10.4_linux_amd64.zip
 unzip consul_1.10.4_linux_amd64.zip
-UUID=$(uuidgen)
 
-usermod -a -G docker ec2-user
-EC2_INSTANCE_IP_ADDRESS=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
-EC2_INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+EC2_INSTANCE_IP_ADDRESS=$(curl -s 169.254.169.254/latest/meta-data/local-ipv4)
+EC2_INSTANCE_ID=$(curl -s 169.254.169.254/latest/meta-data/instance-id)
+AWS_REGION=$(curl -s 169.254.169.254/latest/dynamic/instance-identity/document | jq -r '.region')
+
 mkdir -p /opt/consul/data
 mkdir -p /opt/consul/config
 
@@ -213,10 +174,9 @@ docker run -d --net=host -p 8300:8300 -p 8301:8301 -p 8301:8301/udp -p 8302:8302
 
 #Generate Consul CA
 ./consul tls ca create
-aws secretsmanager create-secret --name my_consul-agent-ca-$UUID \
---description "Consul Agent CA public key" \
---secret-string file://consul-agent-ca.pem
---tags CONSUL_CDK_SAMPLE_SECRET_NAME=CONSUL_AGENT_CA
+aws secretsmanager update-secret --secret-id $CONSUL_CA_SECRET_ARN \
+--secret-string file://consul-agent-ca.pem \
+--region $AWS_REGION
 
 #Generate Server certs
 ./consul tls cert create -server -dc dc1
@@ -239,12 +199,10 @@ EOF
 
 #Generate gossip
 ./consul keygen > consul-agent-gossip.txt
-aws secretsmanager create-secret --name my_consul-gossip-key-$UUID \
---description "Consul gossip key" \
---secret-string file://consul-agent-gossip.txt
---tags CONSUL_CDK_SAMPLE_SECRET_NAME=CONSUL_AGENT_GOSSIP_KEY
+aws secretsmanager update-secret --secret-id $CONSUL_GOSSIP_SECRET_ARN \
+--secret-string file://consul-agent-gossip.txt \
+--region $AWS_REGION
 
-EC2_INSTANCE_IP_ADDRESS=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
 GOSSIP_SECRET=$(cat consul-agent-gossip.txt)
 sudo tee /opt/consul/config/consul-server.json > /dev/null << EOF
 {
@@ -274,19 +232,18 @@ docker run -d --net=host -p 8300:8300 -p 8301:8301 -p 8301:8301/udp -p 8302:8302
 
 ###  Consul Server setup
 
-Create file `lib/consul-server.ts` with the following content. We are using default Consul data center dc1. Change the line `this.datacenter = 'dc1'` accordingly if you are using different Consul data center.
-
+Create file `lib/consul-server.ts` with the following content. We are using the default Consul data center value = dc1. Change the line `this.datacenter = 'dc1'` accordingly if you are using different Consul data center.
 
 ```ts
 import * as fs from 'fs';
 import * as cdk from '@aws-cdk/core';
 import * as ec2 from "@aws-cdk/aws-ec2";
 import * as iam from "@aws-cdk/aws-iam";
-import { ServerInputProps } from './shared-props';
+import * as secretsmanager from '@aws-cdk/aws-secretsmanager';
+import { ServerInputProps, ServerOutputProps } from './shared-props';
 
 export class ConsulServer extends cdk.Stack {
-  public readonly serverTag: {[key:string]: string};
-  public readonly datacenter: string;
+  public readonly props: ServerOutputProps;
 
   constructor(scope: cdk.Construct, id: string, inputProps: ServerInputProps) {
     super(scope, id, inputProps);
@@ -295,20 +252,30 @@ export class ConsulServer extends cdk.Stack {
       generation: ec2.AmazonLinuxGeneration.AMAZON_LINUX_2,
     });
 
+    const agentCASecret = new secretsmanager.Secret(this, 'agentCASecret', {
+      description: 'Consul TLS encryption CA public key'
+    });
+
+    const gossipKeySecret = new secretsmanager.Secret(this, 'gossipKeySecret', {
+      description: 'Consul gossip encryption key'
+    });
+
     // Role to allow Consul server to write to secrets manager
     const role = new iam.Role(this, 'ConsulSecretManagerRole', {
       assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
     });
     role.addToPolicy(new iam.PolicyStatement({
-      resources: [`arn:${cdk.Stack.of(this).partition}:secretsmanager:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:secret:*`],
-      actions: ['secretsmanager:CreateSecret'],
-      conditions: {"ForAnyValue:StringLike": {"secretsmanager:Name": ["my_consul-agent-ca*","my_consul-gossip-key*"]}},
+      actions: ['secretsmanager:UpdateSecret'],
+      resources: [agentCASecret.secretArn, gossipKeySecret.secretArn],
     }));
 
     const userData = ec2.UserData.forLinux();
     const userDataScript = fs.readFileSync('./lib/user-data.txt', 'utf8');
-    userData.addCommands(userDataScript);
     const consulInstanceName = 'ConsulInstance';
+
+    userData.addCommands('export CONSUL_CA_SECRET_ARN='+ agentCASecret.secretArn)
+    userData.addCommands('export CONSUL_GOSSIP_SECRET_ARN='+ gossipKeySecret.secretArn)
+    userData.addCommands(userDataScript);
     userData.addCommands(
     `# Notify CloudFormation that the instance is up and ready`,
     `yum install -y aws-cfn-bootstrap`,
@@ -325,18 +292,16 @@ export class ConsulServer extends cdk.Stack {
       keyName: inputProps.keyName,
       role: role,
       userData: userData,
+      resourceSignalTimeout: cdk.Duration.minutes(5)
     });
     var cfnInstance = consulServer.node.defaultChild as ec2.CfnInstance
     cfnInstance.overrideLogicalId(consulInstanceName);
 
-    this.datacenter = 'dc1';
-
+    const serverDataCenter = 'dc1';
     const tagName = 'Name'
     const tagValue = inputProps.envProps.envName + '-consul-server';
-    cdk.Tags.of(scope).add(tagName, tagValue);
     cdk.Tags.of(consulServer).add(tagName, tagValue);
     const serverTag = { [tagName]: tagValue };
-    this.serverTag = serverTag;
 
     new cdk.CfnOutput(this, 'ConsulSshTunnel', {
       value: `ssh -i "~/.ssh/`+ inputProps.keyName + `.pem" ` +
@@ -344,70 +309,21 @@ export class ConsulServer extends cdk.Stack {
        `ec2-user@` + consulServer.instancePublicDnsName,
       description: "Command to run to open a local SSH tunnel to view the Consul dashboard",
     });
+
+    this.props = {
+      serverTag,
+      serverDataCenter,
+      agentCASecret,
+      gossipKeySecret
+    };
+
   }
 }
-
 ```
 
-### Modify app entry point `bin/app.ts`
-Open `bin/app.ts` file and add the following to the end of the file. 
+## Step 4: Build sample Microservices app with Consul Clients
 
-```ts
-import { ConsulServer } from '../lib/consul-server';
-
-// Consul Server
-var keyName = process.env.MY_KEY_NAME || `$MY_KEY_NAME`;
-const server = new ConsulServer(app, 'ConsulServer', {
-    envProps: environment.props,
-    keyName,
-});
-```
-
-### Deploy the server
-
-To launch the Consul server, you need to specify the EC2 key-pair. Set environment variable `$MY_KEY_NAME` with your existing EC2 key-pair name. 
-
-```
-// Make sure to set the variable $MY_KEY_NAME accordingly
-export MY_KEY_NAME=<CHANGE WITH YOUR EC2 KEY PAIR>
-cdk synth
-cdk deploy --all
-```
-
-Use the CDK output value `ConsulSshTunnel` to establish reverse tunnel to the Consul server. Access Consul UI from http://localhost:8500/ui
-
-
-## Step 5: Launch the sample microservices app
-
-### Setup Secret variables
-On the previous step the `ConsulServer` stack launched the Consul Server, which created two AWS Secrets Manager secrets for Agent CA and Gossip Key. Use AWS console / CLI to retrieve these values (Note that this output is not visible on the CloudFormation stack). 
-
-```
-aws secretsmanager list-secrets --filters Key=name,Values=my_consul | jq ".SecretList[] | {Name, ARN}"
-```
-
-Set the environment variable. Replace `$CONSUL_AGENT_CA_ARN` with the ARN of Secrets Manager Agent CA. Replace `$CONSUL_GOSSIP_KEY_ARN` with the ARN of Secrets Manager Agent Gossip.
-
-```
-export CONSUL_AGENT_CA_ARN=<ARN of Secrets Manager Agent CA>
-export CONSUL_GOSSIP_KEY_ARN=<ARN of Secrets Manager Agent Gossip>
-```
-
-Update file `bin/app.ts` to setup the secrets to be passed to the next stage. Add the following code to the end.
-
-```ts
-import { ServerOutputProps } from '../lib/shared-props';
-
-var agentCASecretArn = process.env.CONSUL_AGENT_CA_ARN || `$CONSUL_AGENT_CA_ARN`;
-var gossipKeySecretArn= process.env.CONSUL_GOSSIP_KEY_ARN || `$CONSUL_GOSSIP_KEY_ARN`;
-const serverProps = new ServerOutputProps(server, agentCASecretArn, gossipKeySecretArn);
-```
-
-## Step 6: Build and Deploy Microservices with Consul Clients
-
-### Create a new Microservice stack
-
-Create a new file `lib/microservices.ts` with the following content. 
+Now we set up three microservices to join Consul service mesh. `greeter` service acts as the front-end that communicate with `name` and `greeting` service. Create a new file `lib/microservices.ts` with the following content. 
 
 ```ts
 import * as path from 'path';
@@ -423,7 +339,6 @@ export class Microservices extends cdk.Stack {
     envProps:EnvironmentOutputProps, serverProps: ServerOutputProps, props?: cdk.StackProps) {
       super(scope, id, props);
 
-      //change to your security group id
       const consulServerSecurityGroup = ec2.SecurityGroup.fromSecurityGroupId(this, 'ImportedServerSG', envProps.serverSecurityGroup.securityGroupId);
       const consulClientSecurityGroup = ec2.SecurityGroup.fromSecurityGroupId(this, 'ImportedClientSG', envProps.clientSecurityGroup.securityGroupId);
 
@@ -452,7 +367,6 @@ export class Microservices extends cdk.Stack {
       }));
       nameDescription.add(new consul_ecs.ECSConsulMeshExtension({
         ...baseProps,
-        port: 3000,
         serviceDiscoveryName: 'name',
       }));
       nameDescription.add(new ecs_extensions.AssignPublicIpExtension());
@@ -471,7 +385,6 @@ export class Microservices extends cdk.Stack {
       }));
       greetingDescription.add(new consul_ecs.ECSConsulMeshExtension({
         ...baseProps,
-        port: 3000,
         serviceDiscoveryName: 'greeting',
       }));
       greetingDescription.add(new ecs_extensions.AssignPublicIpExtension());
@@ -490,7 +403,6 @@ export class Microservices extends cdk.Stack {
       }));
       greeterDescription.add(new consul_ecs.ECSConsulMeshExtension({
         ...baseProps,
-        port: 3000,
         serviceDiscoveryName: 'greeter',
       }));
       greeterDescription.add(new ecs_extensions.AssignPublicIpExtension());
@@ -501,8 +413,8 @@ export class Microservices extends cdk.Stack {
       });
 
       // CONSUL CONNECT
-      greeter.connectTo(name, );
-      greeter.connectTo(greeting, );
+      greeter.connectTo(name, { local_bind_port: 3000 });
+      greeter.connectTo(greeting, { local_bind_port: 3001 });
 
       new cdk.CfnOutput(this, 'ConsulClientSG', {
         value: envProps.clientSecurityGroup.securityGroupId,
@@ -510,43 +422,77 @@ export class Microservices extends cdk.Stack {
       });
   }
 }
-
 ```
 
-### Modify app entry point `bin/app.ts`
+## Step 5: Deploy the application
+
+### Modify app entry point 
+
+Modify the app entry point to launch all stacks. Open `bin/app.ts` file and replace it with the content below. 
+
 ```ts
+#!/usr/bin/env node
+import 'source-map-support/register';
+import * as cdk from '@aws-cdk/core';
+
+const app = new cdk.App();
+
+import { Environment } from '../lib/environment';
+
+// Environment
+var allowedIPCidr = process.env.ALLOWED_IP_CIDR || `$ALLOWED_IP_CIDR`;
+const environment = new Environment(app, 'ConsulEnvironment', {
+    envName: 'test',
+    allowedIpCidr: allowedIPCidr,
+});
+
+import { ConsulServer } from '../lib/consul-server';
+
+// Consul Server
+var keyName = process.env.MY_KEY_NAME || `$MY_KEY_NAME`;
+const server = new ConsulServer(app, 'ConsulServer', {
+    envProps: environment.props,
+    keyName,
+});
+
 import { Microservices } from '../lib/microservices';
 
 // Microservices with Consul Client
-const microservices = new Microservices(app, 'ConsulMicroservices', environment.props, serverProps);
+const microservices = new Microservices(app, 'ConsulMicroservices', environment.props, server.props);
 
 ```
 
 ### Deploy the app
 
-From your terminal, run:
+You need to supply two parameters to the stack: your public IP and your EC2 key pair. 
+- Set the environment variable `$ALLOWED_IP_CIDR` with your own public IP address (include the /32 suffix). 
+- Set environment variable `$MY_KEY_NAME` with your existing EC2 key-pair name. 
 
-```
+Refer to example below:
+```bash
+export ALLOWED_IP_CIDR=$(curl -s ifconfig.me)/32
+export MY_KEY_NAME=<CHANGE WITH YOUR EC2 KEY PAIR>
 cdk deploy --all
 ```
 
-![AWS CDK toolkit output showing the ELB URL](imgs/cdk-output.png)
+Use the CDK output value `ConsulSshTunnel` to establish reverse tunnel to the Consul server. Access Consul UI from http://localhost:8500/ui
 
-Get the ELB URL from the output and hit it on your browser to check the result
+![AWS CDK toolkit output showing the Consul SSH tunnel](imgs/cdk-output-server.png)
+
+Get the ELB URL from the output and open it on your browser to check the result.
+
+![AWS CDK toolkit output showing the ELB URL](imgs/cdk-output.png)
 
 ![Browser output showing the random greeting and name output](imgs/elb-output.png)
 
-You can use the string ConsulSshTunnel from the ConsulServer output to create SSH tunnel to the Consul server and then access it's UI from http://localhost:8500/ui/
+Congrats, you have successfully deployed sample microservice app in ECS and join it to Consul service mesh running on EC2. Don't forget to complete the clean up steps to avoid any incurring charges.
 
-
-## Step 7: Clean up
+## Step 6: Clean up
 
 From your terminal, destroy all stacks
 
 ```
 cdk destroy --all
-aws secretsmanager delete-secret --secret-id $CONSUL_AGENT_CA_ARN
-aws secretsmanager delete-secret --secret-id $CONSUL_GOSSIP_KEY_ARN
 ```
 
 ## Reference
