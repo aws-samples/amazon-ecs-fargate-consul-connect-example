@@ -232,7 +232,7 @@ docker run -d --net=host -p 8300:8300 -p 8301:8301 -p 8301:8301/udp -p 8302:8302
 
 ###  Consul Server setup
 
-Create file `lib/consul-server.ts` with the following content. We are using the default Consul data center value = dc1. Change the line `this.datacenter = 'dc1'` accordingly if you are using different Consul data center.
+Create file `lib/consul-server.ts` with the following content. We are using the default Consul data center value = dc1. Change the variable `serverDataCenter` accordingly if you are using different Consul data center.
 
 ```ts
 import * as fs from 'fs';
