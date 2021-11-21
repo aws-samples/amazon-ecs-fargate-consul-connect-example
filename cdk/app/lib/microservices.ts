@@ -85,8 +85,8 @@ export class Microservices extends cdk.Stack {
       });
 
       // CONSUL CONNECT
-      greeter.connectTo(name, { local_bind_port: 3000 });
-      greeter.connectTo(greeting, { local_bind_port: 3001 });
+      greeter.connectTo(name, { local_bind_port: 3001 });
+      greeter.connectTo(greeting, { local_bind_port: 3002 });
 
       new cdk.CfnOutput(this, 'ConsulClientSG', {
         value: envProps.clientSecurityGroup.securityGroupId,
