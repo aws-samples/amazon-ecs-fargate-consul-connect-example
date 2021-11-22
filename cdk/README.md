@@ -29,7 +29,7 @@ First we need to declare shared properties between the stacks. Create a new `lib
 ```ts
 import * as cdk from '@aws-cdk/core';
 import * as ec2 from '@aws-cdk/aws-ec2';
-import * as extensions from "@aws-cdk-containers/ecs-service-extensions";
+import * as extensions from '@aws-cdk-containers/ecs-service-extensions';
 import * as secretsmanager from '@aws-cdk/aws-secretsmanager';
 
 export interface EnvironmentInputProps extends cdk.StackProps {
@@ -64,9 +64,9 @@ Now we are going to build a new VPC, launch ECS cluster and create dedicated sec
 
 ```ts
 import * as cdk from '@aws-cdk/core';
-import * as ec2 from "@aws-cdk/aws-ec2";
-import * as ecs from "@aws-cdk/aws-ecs";
-import * as extensions from "@aws-cdk-containers/ecs-service-extensions";
+import * as ec2 from '@aws-cdk/aws-ec2';
+import * as ecs from '@aws-cdk/aws-ecs';
+import * as extensions from '@aws-cdk-containers/ecs-service-extensions';
 import { EnvironmentInputProps, EnvironmentOutputProps } from './shared-props';
 
 export class Environment extends cdk.Stack {
@@ -108,7 +108,7 @@ export class Environment extends cdk.Stack {
       'allow all the clients in the mesh talk to each other'
     );
 
-    const ecsCluster = new ecs.Cluster(this, "ConsulMicroservicesCluster", {
+    const ecsCluster = new ecs.Cluster(this, 'ConsulMicroservicesCluster', {
       vpc: vpc,
     });
 
@@ -237,8 +237,8 @@ Create file `lib/consul-server.ts` with the following content. We are using the 
 ```ts
 import * as fs from 'fs';
 import * as cdk from '@aws-cdk/core';
-import * as ec2 from "@aws-cdk/aws-ec2";
-import * as iam from "@aws-cdk/aws-iam";
+import * as ec2 from '@aws-cdk/aws-ec2';
+import * as iam from '@aws-cdk/aws-iam';
 import * as secretsmanager from '@aws-cdk/aws-secretsmanager';
 import { ServerInputProps, ServerOutputProps } from './shared-props';
 
@@ -307,7 +307,7 @@ export class ConsulServer extends cdk.Stack {
       value: `ssh -i "~/.ssh/`+ inputProps.keyName + `.pem" ` +
        `-L 127.0.0.1:8500:` + consulServer.instancePublicDnsName + `:8500 ` +
        `ec2-user@` + consulServer.instancePublicDnsName,
-      description: "Command to run to open a local SSH tunnel to view the Consul dashboard",
+      description: 'Command to run to open a local SSH tunnel to view the Consul dashboard',
     });
 
     this.props = {
@@ -316,7 +316,6 @@ export class ConsulServer extends cdk.Stack {
       agentCASecret,
       gossipKeySecret
     };
-
   }
 }
 ```
@@ -331,7 +330,7 @@ import * as cdk from '@aws-cdk/core';
 import * as ec2 from '@aws-cdk/aws-ec2';
 import * as ecs from '@aws-cdk/aws-ecs';
 import * as consul_ecs from '@aws-quickstart/ecs-consul-mesh-extension';
-import * as ecs_extensions from "@aws-cdk-containers/ecs-service-extensions";
+import * as ecs_extensions from '@aws-cdk-containers/ecs-service-extensions';
 import { EnvironmentOutputProps, ServerOutputProps } from './shared-props';
 
 export class Microservices extends cdk.Stack {

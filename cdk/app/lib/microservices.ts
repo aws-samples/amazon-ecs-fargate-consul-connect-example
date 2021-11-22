@@ -3,7 +3,7 @@ import * as cdk from '@aws-cdk/core';
 import * as ec2 from '@aws-cdk/aws-ec2';
 import * as ecs from '@aws-cdk/aws-ecs';
 import * as consul_ecs from '@aws-quickstart/ecs-consul-mesh-extension';
-import * as ecs_extensions from "@aws-cdk-containers/ecs-service-extensions";
+import * as ecs_extensions from '@aws-cdk-containers/ecs-service-extensions';
 import { EnvironmentOutputProps, ServerOutputProps } from './shared-props';
 
 export class Microservices extends cdk.Stack {
@@ -90,7 +90,7 @@ export class Microservices extends cdk.Stack {
 
       new cdk.CfnOutput(this, 'ConsulClientSG', {
         value: envProps.clientSecurityGroup.securityGroupId,
-        description: "Consul Client SG",
+        description: 'Consul Client SG',
       });
   }
 }

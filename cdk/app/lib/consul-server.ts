@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as cdk from '@aws-cdk/core';
-import * as ec2 from "@aws-cdk/aws-ec2";
-import * as iam from "@aws-cdk/aws-iam";
+import * as ec2 from '@aws-cdk/aws-ec2';
+import * as iam from '@aws-cdk/aws-iam';
 import * as secretsmanager from '@aws-cdk/aws-secretsmanager';
 import { ServerInputProps, ServerOutputProps } from './shared-props';
 
@@ -70,7 +70,7 @@ export class ConsulServer extends cdk.Stack {
       value: `ssh -i "~/.ssh/`+ inputProps.keyName + `.pem" ` +
        `-L 127.0.0.1:8500:` + consulServer.instancePublicDnsName + `:8500 ` +
        `ec2-user@` + consulServer.instancePublicDnsName,
-      description: "Command to run to open a local SSH tunnel to view the Consul dashboard",
+      description: 'Command to run to open a local SSH tunnel to view the Consul dashboard',
     });
 
     this.props = {
@@ -79,6 +79,5 @@ export class ConsulServer extends cdk.Stack {
       agentCASecret,
       gossipKeySecret
     };
-
   }
 }

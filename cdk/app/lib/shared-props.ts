@@ -1,6 +1,6 @@
 import * as cdk from '@aws-cdk/core';
 import * as ec2 from '@aws-cdk/aws-ec2';
-import * as extensions from "@aws-cdk-containers/ecs-service-extensions";
+import * as extensions from '@aws-cdk-containers/ecs-service-extensions';
 import * as secretsmanager from '@aws-cdk/aws-secretsmanager';
 
 export interface EnvironmentInputProps extends cdk.StackProps {
