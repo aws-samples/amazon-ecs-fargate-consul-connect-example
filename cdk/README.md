@@ -1,6 +1,6 @@
 # Example CDK implementation - Amazon ECS on AWS Fargate with Consul Connect service mesh
 
-In this example we'll configure one Consul server in VPC with TLS and gossip encryption enabled. Using [AWS CDK ECS service extension for Consul](https://github.com/aws-ia/ecs-consul-mesh-extension), this sample app will will launch ECS cluster with sample `greeter` application connected to Consul service mesh.
+In this example we'll configure one Consul server in VPC with TLS and gossip encryption enabled. Using [AWS CDK ECS service extension for Consul](https://github.com/aws-ia/ecs-consul-mesh-extension), this sample app will launch ECS cluster with sample `greeter` application. All services in the application will be connected to each other via Consul service mesh.
 
 ## Pre-requisites:
 * AWS CLI with valid AWS account credentials configured.
