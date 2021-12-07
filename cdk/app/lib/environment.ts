@@ -52,6 +52,7 @@ export class Environment extends cdk.Stack {
 
     const ecsCluster = new ecs.Cluster(this, "ConsulMicroservicesCluster", {
       vpc: vpc,
+      containerInsights: true,
     });
 
     const ecsEnvironment = new extensions.Environment(scope, 'ConsulECSEnvironment', {
