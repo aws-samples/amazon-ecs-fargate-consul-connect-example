@@ -11,9 +11,16 @@ export class Environment extends cdk.Stack {
     super(scope, id, inputProps);
 
     const vpc = new ec2.Vpc(this, 'ConsulVPC', {
-      subnetConfiguration: [{
+      subnetConfiguration: [
+        {
+          cidrMask: 24,
           name: 'PublicSubnet',
           subnetType: ec2.SubnetType.PUBLIC,
+        },
+        {
+          cidrMask: 24,
+          name: 'PrivateSubnet',
+          subnetType: ec2.SubnetType.PRIVATE_WITH_NAT,
         }]
     });
 

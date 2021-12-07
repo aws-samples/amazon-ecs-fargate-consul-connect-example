@@ -49,6 +49,7 @@ export class ConsulServer extends cdk.Stack {
     // This setup is just for a test environment
     const consulServer = new ec2.Instance(this, consulInstanceName, {
       vpc: vpc,
+      vpcSubnets: {subnetType: ec2.SubnetType.PUBLIC},
       securityGroup: inputProps.envProps.serverSecurityGroup,
       instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3,ec2.InstanceSize.LARGE),
       machineImage: ami,
