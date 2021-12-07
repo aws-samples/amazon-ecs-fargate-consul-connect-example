@@ -56,7 +56,13 @@ export class ConsulServer extends cdk.Stack {
       keyName: inputProps.keyName,
       role: role,
       userData: userData,
-      resourceSignalTimeout: cdk.Duration.minutes(5)
+      resourceSignalTimeout: cdk.Duration.minutes(5),
+      blockDevices: [{
+        deviceName: '/dev/xvda',
+        volume: ec2.BlockDeviceVolume.ebs(10, {
+          encrypted: true,
+        }),
+      }],
     });
     var cfnInstance = consulServer.node.defaultChild as ec2.CfnInstance
     cfnInstance.overrideLogicalId(consulInstanceName);
