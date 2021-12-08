@@ -40,8 +40,7 @@ export class Microservices extends cdk.Stack {
       nameDescription.add(new consul_ecs.ECSConsulMeshExtension({
         ...baseProps,
         serviceDiscoveryName: 'name',
-      }));
-      nameDescription.add(new ecs_extensions.AssignPublicIpExtension());
+      }));      
       const name = new ecs_extensions.Service(this, 'name', {
         environment: envProps.ecsEnvironment,
         serviceDescription: nameDescription
@@ -58,8 +57,7 @@ export class Microservices extends cdk.Stack {
       greetingDescription.add(new consul_ecs.ECSConsulMeshExtension({
         ...baseProps,
         serviceDiscoveryName: 'greeting',
-      }));
-      greetingDescription.add(new ecs_extensions.AssignPublicIpExtension());
+      }));      
       const greeting = new ecs_extensions.Service(this, 'greeting', {
         environment: envProps.ecsEnvironment,
         serviceDescription: greetingDescription,
@@ -76,8 +74,7 @@ export class Microservices extends cdk.Stack {
       greeterDescription.add(new consul_ecs.ECSConsulMeshExtension({
         ...baseProps,
         serviceDiscoveryName: 'greeter',
-      }));
-      greeterDescription.add(new ecs_extensions.AssignPublicIpExtension());
+      }));      
       greeterDescription.add(new ecs_extensions.HttpLoadBalancerExtension());
       const greeter = new ecs_extensions.Service(this, 'greeter', {
         environment: envProps.ecsEnvironment,
