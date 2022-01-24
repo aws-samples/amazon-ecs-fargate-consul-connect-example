@@ -27,6 +27,26 @@ export class Microservices extends cdk.Stack {
         gossipEncryptKey: serverProps.gossipKeySecret,
         tls: true,
         consulDatacenter: serverProps.serverDataCenter,
+        port: 3000,
+        /* consulChecks: [
+          {
+            checkid  : "server-http",
+            name     : "HTTP health check on port 3000",
+            http     : "http://localhost:3000/health",
+            method   : "GET",
+            timeout  : "10s",
+            interval : "2s",
+          }
+        ], */ 
+        // Here you can either define Consul Health Checks or
+        // ECS Health Checks but not both. For demonstration purpose we have 
+        // added both the checks here and commented out the Consul Checks. 
+        healthCheck: {
+          command: ["CMD-SHELL", "curl localhost:3000/health"],
+          interval: cdk.Duration.seconds(30),
+          retries: 3,
+          timeout: cdk.Duration.seconds(5),
+        }
       };
 
       // NAME service
