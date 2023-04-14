@@ -70,8 +70,6 @@ import * as extensions from '@aws-cdk-containers/ecs-service-extensions';
 import { EnvironmentInputProps, EnvironmentOutputProps } from './shared-props';
 
 export class Environment extends cdk.Stack {
-  public readonly props: EnvironmentOutputProps;
-
   constructor(scope: cdk.Construct, id: string, inputProps: EnvironmentInputProps) {
     super(scope, id, inputProps);
 
